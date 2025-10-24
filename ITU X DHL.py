@@ -5,6 +5,8 @@ pyautogui.FAILSAFE = True  # Pausa de emergência movendo o mouse para o canto s
 
 #-------CÓDIGO ITU -------
 # ---------- CÓDIGO ITU PARTE 1 ----------
+pyautogui.alert('Antes de iniciar, certifique-se de que: \n\n1. Você está logado no sistema INVOISYS.\n2. O arquivo XML para averbação foi o último item baixado.\n\nATENÇÃO: CASO DESEJE CANCELAR O PROCESSO MOVA O MOUSE PARA CANTO SUPERIOR ESQUERDO DO MONITOR.\n\nClique em OK para iniciar o processo automático.')
+
 pyautogui.hotkey('winleft', '1')
 time.sleep(2)
 pyautogui.hotkey('ctrl', 'shift', 'a')
