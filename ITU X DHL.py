@@ -63,8 +63,8 @@ pyautogui.alert(
     'Antes de prosseguir:\n\n'
     '1. Baixe o arquivo XML;\n'
     '2. Mantenha 3 abas do Invoisys abertas no começo do navegador;\n'
-    '2. Mantenha o site de averbação logado.\n\n'
-    'OBS: Para interromper o processo, deslize o mouse repetidamente em direção ao canto superior direito da tela'
+    '3. Mantenha o site de averbação logado.\n\n'
+    'OBS: Para interromper o processo, deslize o mouse repetidamente em direção ao canto superior direito da tela.'
 )
 time.sleep(2)
 #---------------------------------------------------------------
@@ -328,12 +328,9 @@ pyautogui.write('CONTRIBUINTE', interval=0.10)
 time.sleep(0.3)
 pyautogui.press('esc')
 time.sleep(0.3)
-pyautogui.press('tab')
-time.sleep(0.3)
-pyautogui.press('tab')
-time.sleep(0.3)
-pyautogui.press('tab')
-time.sleep(0.3)
+for _ in range(3):
+    pyautogui.press('tab')
+    time.sleep(0.3)
 pyautogui.write('04898488000177', interval=0.10)
 pyautogui.press('tab')
 time.sleep(0.3)
