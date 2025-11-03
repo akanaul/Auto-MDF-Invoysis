@@ -17,7 +17,9 @@ time.sleep(1)
 #---------------------------------------------------------------
 
 #GAP
+pyautogui.press('enter')
 pyautogui.hotkey('ctrl', 'shift', 'a')
+time.sleep(0.2)
 
 
 # IR PARA 1ª ABA DO NAVEGADOR
@@ -38,8 +40,8 @@ for _ in range(4):
     pyautogui.press('tab')
     time.sleep(0.2)
 
-time.sleep(1)
-#PROMPT DE COMANDO PARA DIGITAR O CTE
+time.sleep(0.5)
+#PROMPT DE COMANDO PARA DIGITAR A DT
 codigo = pyautogui.prompt(
     text='Digite o número do DT:',
     title='DT'
