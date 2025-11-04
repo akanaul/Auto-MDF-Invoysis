@@ -6,6 +6,132 @@ import os
 import pyperclip
 import re
 from pathlib import Path
+import tkinter as tk
+from tkinter import simpledialog, messagebox
+
+
+def _parse_text_title_defaults(args, kwargs, default_title):
+    text = ''
+    title = default_title
+    default_value = None
+
+    if args:
+        text = args[0]
+    if len(args) > 1:
+        title = args[1]
+    if len(args) > 2:
+        default_value = args[2]
+
+    if 'text' in kwargs:
+        text = kwargs['text']
+    if 'title' in kwargs:
+        title = kwargs['title']
+    if 'default' in kwargs:
+        default_value = kwargs['default']
+
+    return text, title, default_value
+
+
+def prompt_topmost(*args, **kwargs):
+    """Exibe um prompt que permanece acima de todas as janelas."""
+    text, title, default_value = _parse_text_title_defaults(args, kwargs, 'Entrada')
+
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes('-topmost', True)
+    root.lift()
+    root.after(0, root.focus_force)
+    root.after(0, root.lift)
+
+    try:
+        return simpledialog.askstring(title or 'Entrada', text or '', parent=root, initialvalue=default_value)
+    finally:
+        root.destroy()
+
+
+def alert_topmost(*args, **kwargs):
+    """Exibe um alerta informativo em primeiro plano."""
+    text, title, _ = _parse_text_title_defaults(args, kwargs, 'Informação')
+
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes('-topmost', True)
+    root.lift()
+    root.after(0, root.focus_force)
+    root.after(0, root.lift)
+
+    try:
+        messagebox.showinfo(title or 'Informação', text or '', parent=root)
+    finally:
+        root.destroy()
+
+    return 'OK'
+
+
+def confirm_topmost(*args, **kwargs):
+    """Exibe uma janela de confirmação com botões personalizados sempre no topo."""
+    text, title, _ = _parse_text_title_defaults(args, kwargs, 'Confirmação')
+    buttons = kwargs.get('buttons', ['OK', 'Cancel'])
+
+    if not buttons:
+        buttons = ['OK']
+
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes('-topmost', True)
+    root.lift()
+
+    top = tk.Toplevel(root)
+    top.title(title or 'Confirmação')
+    top.transient(root)
+    top.attributes('-topmost', True)
+    top.resizable(False, False)
+
+    result = {'value': buttons[0]}
+
+    def on_click(value):
+        result['value'] = value
+        top.destroy()
+
+    def on_close():
+        if 'Cancel' in buttons:
+            result['value'] = 'Cancel'
+        else:
+            result['value'] = buttons[-1]
+        top.destroy()
+
+    top.protocol('WM_DELETE_WINDOW', on_close)
+
+    label = tk.Label(top, text=text or '', justify='left', wraplength=420)
+    label.pack(padx=20, pady=(20, 10))
+
+    button_frame = tk.Frame(top)
+    button_frame.pack(padx=20, pady=(0, 20))
+
+    columns = min(3, len(buttons)) or 1
+    for idx, btn_text in enumerate(buttons):
+        button = tk.Button(button_frame, text=btn_text, width=18, command=lambda value=btn_text: on_click(value))
+        row = idx // columns
+        col = idx % columns
+        button.grid(row=row, column=col, padx=5, pady=5, sticky='ew')
+
+    top.update_idletasks()
+    top.lift()
+    top.focus_force()
+    width = top.winfo_width()
+    height = top.winfo_height()
+    screen_width = top.winfo_screenwidth()
+    screen_height = top.winfo_screenheight()
+    pos_x = (screen_width // 2) - (width // 2)
+    pos_y = (screen_height // 2) - (height // 2)
+    top.geometry(f"+{pos_x}+{pos_y}")
+    top.grab_set()
+    top.focus_force()
+    top.lift()
+
+    root.wait_window(top)
+    root.destroy()
+    return result['value']
 pyautogui.FAILSAFE = True  # Pausa de emergência movendo o mouse para o canto superior esquerdo
 #---------------------------------------------------------------
 
@@ -42,13 +168,13 @@ for _ in range(4):
 
 time.sleep(0.5)
 #PROMPT DE COMANDO PARA DIGITAR A DT
-codigo = pyautogui.prompt(
+codigo = prompt_topmost(
     text='Digite o número do DT:',
     title='DT'
 )
 
 if not codigo:
-    pyautogui.alert('Nenhum código informado. O script foi pausado.')
+    alert_topmost('Nenhum código informado. O script foi pausado.')
     pyautogui.FAILSAFE = True
     exit()
 pyautogui.write(codigo.upper(), interval=0.1)
@@ -59,7 +185,7 @@ time.sleep(0.5)
 #---------------------------------------------------------------
 
 #ALERTA
-pyautogui.alert(
+alert_topmost(
     'Antes de prosseguir:\n\n'
     '1. Baixe o arquivo XML;\n'
     '2. Mantenha 3 abas do Invoisys abertas no começo do navegador;\n'
@@ -107,7 +233,7 @@ pyautogui.press('enter')
 #---------------------------------------------------------------
 
 # ALERTA
-pyautogui.alert('Aguarde o formulário abrir.')
+alert_topmost('Aguarde o formulário abrir.')
 time.sleep(2)
 #---------------------------------------------------------------
 
@@ -177,7 +303,7 @@ time.sleep(2)
 downloads_path = Path.home() / "Downloads"
 list_of_files = list(downloads_path.glob('*'))
 if not list_of_files:
-    pyautogui.alert('A pasta Downloads está vazia!')
+    alert_topmost('A pasta Downloads está vazia!')
 else:
     latest_file = max(list_of_files, key=os.path.getctime)
     pyautogui.write(str(latest_file), interval=0.05)
@@ -221,20 +347,20 @@ pyautogui.write('PA/PALLET', interval=0.1)
 for _ in range(2):
     pyautogui.press('tab')
     time.sleep(0.1)
-opcao = pyautogui.confirm(
+opcao = confirm_topmost(
     text='Selecione o código NCM ou escolha "Outro código" para digitar manualmente:',
     title='Escolha de NCM',
     buttons=['19041000', '19059090', '18069000', '20098921', '22029900', '30005980', 'Outro código', 'Cancelar']
 )
 
 if opcao == 'Cancelar':
-    pyautogui.alert('Nenhum código NCM selecionado. O script foi pausado.')
+    alert_topmost('Nenhum código NCM selecionado. O script foi pausado.')
     pyautogui.FAILSAFE = True
     exit()
 elif opcao == 'Outro código':
-    codigo = pyautogui.prompt('Digite o código NCM:')
+    codigo = prompt_topmost('Digite o código NCM:')
     if not codigo:
-        pyautogui.alert('Nenhum código NCM digitado. O script foi pausado.')
+        alert_topmost('Nenhum código NCM digitado. O script foi pausado.')
         pyautogui.FAILSAFE = True
         exit()
 else:
@@ -516,7 +642,7 @@ time.sleep(1)
 downloads_path = Path.home() / "Downloads"
 list_of_files = list(downloads_path.glob('*'))
 if not list_of_files:
-    pyautogui.alert('A pasta Downloads está vazia!')
+    alert_topmost('A pasta Downloads está vazia!')
 else:
     latest_file = max(list_of_files, key=os.path.getctime)
     pyautogui.write(str(latest_file), interval=0.07)
@@ -608,7 +734,7 @@ pyautogui.hotkey('alt', 'tab')
 time.sleep(0.5)
 
 #ALERTA
-pyautogui.alert('Copie o número do CT-E')
+alert_topmost('Copie o número do CT-E')
 time.sleep(0.5)
 
 pyautogui.hotkey('alt', 'tab')
@@ -620,4 +746,4 @@ time.sleep(0.5)
 
 
 # ---------- FINALIZAÇÃO ----------
-pyautogui.alert('Sucesso! Inclua a NF e os dados do motorista')
+alert_topmost('Sucesso! Inclua a NF e os dados do motorista')
