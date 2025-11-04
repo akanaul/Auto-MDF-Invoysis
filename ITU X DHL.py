@@ -11,11 +11,101 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import simpledialog, messagebox
 
+try:
+    import pygetwindow as gw
+except Exception:
+    gw = None
+
 
 BRIDGE_ACTIVE = os.environ.get('MDF_BRIDGE_ACTIVE') == '1'
 BRIDGE_PREFIX = os.environ.get('MDF_BRIDGE_PREFIX', '__MDF_GUI_BRIDGE__')
 BRIDGE_ACK = os.environ.get('MDF_BRIDGE_ACK', '__MDF_GUI_ACK__')
 BRIDGE_CANCEL = os.environ.get('MDF_BRIDGE_CANCEL', '__MDF_GUI_CANCEL__')
+
+GUI_WINDOW_KEYWORDS = ['Auto MDF InvoISys', 'Control Center v0.5.0-Alpha-GUI']
+BROWSER_WINDOW_KEYWORDS = ['Google Chrome', 'Microsoft Edge', 'Mozilla Firefox', 'Brave', 'Opera']
+LAST_BROWSER_WINDOW = None
+
+
+def _is_browser_window(window):
+    try:
+        title = getattr(window, 'title', '') or ''
+    except Exception:
+        return False
+    if not title:
+        return False
+    if any(keyword in title for keyword in GUI_WINDOW_KEYWORDS):
+        return False
+    return any(keyword in title for keyword in BROWSER_WINDOW_KEYWORDS)
+
+
+def _activate_browser_window():
+    """Traz uma janela de navegador para o foco e seleciona a primeira aba."""
+    global LAST_BROWSER_WINDOW
+
+    if gw:
+        candidates = []
+
+        try:
+            active = gw.getActiveWindow()
+        except Exception:
+            active = None
+
+        if LAST_BROWSER_WINDOW and _is_browser_window(LAST_BROWSER_WINDOW):
+            candidates.append(LAST_BROWSER_WINDOW)
+
+        if active and _is_browser_window(active) and active not in candidates:
+            candidates.insert(0, active)
+
+        try:
+            for keyword in BROWSER_WINDOW_KEYWORDS:
+                windows = gw.getWindowsWithTitle(keyword)
+                for window in windows:
+                    if _is_browser_window(window) and window not in candidates:
+                        candidates.append(window)
+        except Exception:
+            pass
+
+        for window in candidates:
+            try:
+                if window.isMinimized:
+                    window.restore()
+                window.activate()
+                LAST_BROWSER_WINDOW = window
+                time.sleep(0.25)
+                pyautogui.hotkey('ctrl', '1')
+                time.sleep(0.15)
+                return True
+            except Exception:
+                continue
+
+    # Sem pygetwindow ou sem candidatos: apenas reforça a aba atual
+    pyautogui.hotkey('ctrl', '1')
+    time.sleep(0.15)
+    return False
+
+
+def ensure_browser_focus():
+    """Garante que o navegador continue em foco, evitando a GUI principal."""
+    global LAST_BROWSER_WINDOW
+    if gw:
+        try:
+            active = gw.getActiveWindow()
+            if active:
+                title = getattr(active, 'title', '') or ''
+                if _is_browser_window(active):
+                    # Guardar referência e apenas reforçar a primeira aba
+                    LAST_BROWSER_WINDOW = active
+                    pyautogui.hotkey('ctrl', '1')
+                    time.sleep(0.15)
+                    return
+                if any(keyword in title for keyword in GUI_WINDOW_KEYWORDS):
+                    _activate_browser_window()
+                    return
+        except Exception:
+            pass
+
+    _activate_browser_window()
 
 
 def _bridge_request(payload):
@@ -71,6 +161,7 @@ def prompt_topmost(*args, **kwargs):
         'default': default_value or ''
     })
     if handled:
+        ensure_browser_focus()
         return response
 
     root = tk.Tk()
@@ -84,6 +175,7 @@ def prompt_topmost(*args, **kwargs):
         return simpledialog.askstring(title or 'Entrada', text or '', parent=root, initialvalue=default_value)
     finally:
         root.destroy()
+        ensure_browser_focus()
 
 
 def alert_topmost(*args, **kwargs):
@@ -96,6 +188,7 @@ def alert_topmost(*args, **kwargs):
         'title': title or 'Informação'
     })
     if handled:
+        ensure_browser_focus()
         return 'OK'
 
     root = tk.Tk()
@@ -109,6 +202,7 @@ def alert_topmost(*args, **kwargs):
         messagebox.showinfo(title or 'Informação', text or '', parent=root)
     finally:
         root.destroy()
+        ensure_browser_focus()
 
     return 'OK'
 
@@ -128,6 +222,7 @@ def confirm_topmost(*args, **kwargs):
         'buttons': buttons
     })
     if handled:
+        ensure_browser_focus()
         return response if response is not None else ('Cancel' if 'Cancel' in buttons else buttons[-1])
 
     root = tk.Tk()
@@ -185,6 +280,7 @@ def confirm_topmost(*args, **kwargs):
 
     root.wait_window(top)
     root.destroy()
+    ensure_browser_focus()
     return result['value']
 pyautogui.FAILSAFE = True  # Pausa de emergência movendo o mouse para o canto superior esquerdo
 #---------------------------------------------------------------
@@ -203,11 +299,8 @@ time.sleep(0.2)
 
 
 # IR PARA 1ª ABA DO NAVEGADOR
-
-pyautogui.hotkey('ctrl', '1')
-time.sleep(2)
-pyautogui.hotkey('ctrl', '1')
-time.sleep(1)
+ensure_browser_focus()
+time.sleep(0.5)
 #---------------------------------------------------------------
 
 #PESQUISAR E BAIXAR CTE

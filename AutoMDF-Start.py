@@ -11,7 +11,7 @@ Versão v0.5.0-Alpha-GUI:
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext, simpledialog
+from tkinter import ttk, messagebox, scrolledtext
 import threading
 import os
 import sys
@@ -161,6 +161,7 @@ class ScriptExecutor:
             env['MDF_BRIDGE_PREFIX'] = BRIDGE_PREFIX
             env['MDF_BRIDGE_ACK'] = BRIDGE_ACK
             env['MDF_BRIDGE_CANCEL'] = BRIDGE_CANCEL
+            env['MDF_PROGRESS_FILE'] = str(self.progress_file)
             
             # Iniciar processo de forma completamente isolada
             self.process = subprocess.Popen(
@@ -321,13 +322,22 @@ class ScriptExecutor:
     
     def get_progress(self):
         """Lê o arquivo de progresso se existir"""
-        try:
-            if os.path.exists(self.progress_file):
-                with open(self.progress_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-        except:
-            pass
-        
+        paths_to_try = [self.progress_file]
+        default_path = BASE_DIR / ProgressManager.DEFAULT_FILE_NAME
+        if default_path not in paths_to_try:
+            paths_to_try.append(default_path)
+
+        for progress_path in paths_to_try:
+            try:
+                if os.path.exists(progress_path):
+                    with open(progress_path, 'r', encoding='utf-8') as f:
+                        return json.load(f)
+            except json.JSONDecodeError:
+                # Arquivo pode estar sendo escrito; tentar novamente em ciclo futuro
+                continue
+            except Exception:
+                continue
+
         return None
 
 
@@ -979,7 +989,11 @@ class MDFAutomationGUIv2:
         progress_bar = ttk.Progressbar(progress_frame, orient=tk.HORIZONTAL, mode='determinate', maximum=100)
         progress_bar.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
 
-        progress_label = ttk.Label(progress_frame, text="0%")
+        # Start bar in indeterminate mode until precise progress becomes available
+        progress_bar.config(mode='indeterminate')
+        progress_bar.start(120)
+
+        progress_label = ttk.Label(progress_frame, text="Em andamento...")
         progress_label.pack(side=tk.LEFT)
 
         # Botões de controle
@@ -1013,7 +1027,10 @@ class MDFAutomationGUIv2:
             'last_status': None,
             'last_progress_step': -1,
             'last_output_index': 0,
-            'finalized': False
+            'finalized': False,
+            'progress_mode': 'indeterminate',
+            'no_progress_counter': 0,
+            'progress_hint_logged': False
         }
 
         self._append_log_message(
@@ -1157,15 +1174,33 @@ class MDFAutomationGUIv2:
             
             # Atualizar progresso se disponível
             progress = executor.get_progress()
-            if progress:
+            if progress and 'percentage' in progress:
                 percentage = max(0, min(100, int(progress.get('percentage', 0))))
+                if widgets.get('progress_mode') == 'indeterminate':
+                    try:
+                        widgets['progress_bar'].stop()
+                    except Exception:
+                        pass
+                    widgets['progress_bar'].config(mode='determinate')
+                    widgets['progress_mode'] = 'determinate'
                 widgets['progress_label'].config(text=f"{percentage}%")
                 widgets['progress_bar'].config(value=percentage)
+                widgets['no_progress_counter'] = 0
                 step = percentage // 10
                 last_step = widgets.get('last_progress_step', -1)
                 if step > 0 and step != last_step:
                     self._append_log_message(f"📈 Progresso atualizado: {percentage}% concluído.")
                     widgets['last_progress_step'] = step
+            else:
+                widgets['no_progress_counter'] = widgets.get('no_progress_counter', 0) + 1
+                if widgets.get('progress_mode') == 'indeterminate':
+                    widgets['progress_label'].config(text="Em andamento...")
+                    if widgets['no_progress_counter'] >= 5 and not widgets.get('progress_hint_logged'):
+                        self._append_log_message(
+                            "ℹ️ Para acompanhar o progresso percentual, utilize o ProgressManager dentro do script (veja o README).",
+                            'info'
+                        )
+                        widgets['progress_hint_logged'] = True
             
             # Se execução terminou
             if not executor.is_running and not widgets.get('finalized'):
@@ -1178,19 +1213,35 @@ class MDFAutomationGUIv2:
 
                 # Adicionar ao histórico apenas uma vez por execução
                 if executor.status == "completed":
+                    try:
+                        widgets['progress_bar'].stop()
+                    except Exception:
+                        pass
+                    widgets['progress_bar'].config(mode='determinate')
                     widgets['progress_bar'].config(value=100)
                     widgets['progress_label'].config(text="100%")
                     widgets['last_progress_step'] = 10
+                    widgets['progress_mode'] = 'determinate'
                     self._log_to_history(
                         f"[{datetime.now().strftime('%H:%M:%S')}] ✅ Concluído: {executor.script_name} ({executor.get_elapsed_time()})",
                         'success'
                     )
                 elif executor.status == "failsafe":
+                    try:
+                        widgets['progress_bar'].stop()
+                    except Exception:
+                        pass
+                    widgets['progress_label'].config(text="Interrompido")
                     self._log_to_history(
                         f"[{datetime.now().strftime('%H:%M:%S')}] 🛑 FailSafe acionado: {executor.script_name} ({executor.get_elapsed_time()})",
                         'warning'
                     )
                 elif executor.status == "error":
+                    try:
+                        widgets['progress_bar'].stop()
+                    except Exception:
+                        pass
+                    widgets['progress_label'].config(text="Erro")
                     # VERIFICAR DEPENDÊNCIAS APENAS QUANDO HÁ ERRO
                     self._log_to_history(
                         f"[{datetime.now().strftime('%H:%M:%S')}] ❌ Erro: {executor.script_name} ({executor.get_elapsed_time()})",
@@ -1205,6 +1256,13 @@ class MDFAutomationGUIv2:
                             'warning'
                         )
                         self._check_and_suggest_dependencies()
+                else:
+                    try:
+                        widgets['progress_bar'].stop()
+                    except Exception:
+                        pass
+                    widgets['progress_label'].config(text="Parado")
+                widgets['progress_mode'] = 'determinate'
 
                 widgets['finalized'] = True
                 self.current_execution = None
@@ -1253,41 +1311,47 @@ class MDFAutomationGUIv2:
         dialog_type = payload.get('type')
         title = payload.get('title') or "Auto MDF InvoISys"
         message = payload.get('text') or ""
+        parent = self._dialog_parent()
+        was_iconified = self._ensure_dialog_parent_visible()
 
-        if dialog_type == 'alert':
-            self._append_log_message(f"🔔 Alerta do script: {message}", 'info')
-            messagebox.showinfo(title, message, parent=self.root)
+        try:
+            if dialog_type == 'alert':
+                self._append_log_message(f"🔔 Alerta do script: {message}", 'info')
+                self._show_custom_alert(parent, title, message)
+                executor.send_bridge_response(BRIDGE_ACK)
+                return
+
+            if dialog_type == 'prompt':
+                self._append_log_message(f"📝 Entrada solicitada: {message}", 'info')
+                default = payload.get('default', '')
+                response = self._show_custom_prompt(parent, title, message, default)
+                if response is None:
+                    executor.send_bridge_response(BRIDGE_CANCEL)
+                else:
+                    executor.send_bridge_response(response)
+                return
+
+            if dialog_type == 'confirm':
+                self._append_log_message(f"❓ Confirmação solicitada: {message}", 'info')
+                buttons = payload.get('buttons') or ['OK', 'Cancel']
+                choice = self._show_custom_confirm(title, message, buttons, parent=parent)
+                if choice is None:
+                    executor.send_bridge_response(BRIDGE_CANCEL)
+                else:
+                    executor.send_bridge_response(choice)
+                return
+
+            # Caso não reconheça, apenas confirma para evitar travar o script
             executor.send_bridge_response(BRIDGE_ACK)
-            return
+        finally:
+            self._restore_dialog_parent_state(was_iconified)
 
-        if dialog_type == 'prompt':
-            self._append_log_message(f"📝 Entrada solicitada: {message}", 'info')
-            default = payload.get('default', '')
-            response = simpledialog.askstring(title, message, parent=self.root, initialvalue=default)
-            if response is None:
-                executor.send_bridge_response(BRIDGE_CANCEL)
-            else:
-                executor.send_bridge_response(response)
-            return
-
-        if dialog_type == 'confirm':
-            self._append_log_message(f"❓ Confirmação solicitada: {message}", 'info')
-            buttons = payload.get('buttons') or ['OK', 'Cancel']
-            choice = self._show_custom_confirm(title, message, buttons)
-            if choice is None:
-                executor.send_bridge_response(BRIDGE_CANCEL)
-            else:
-                executor.send_bridge_response(choice)
-            return
-
-        # Caso não reconheça, apenas confirma para evitar travar o script
-        executor.send_bridge_response(BRIDGE_ACK)
-
-    def _show_custom_confirm(self, title, message, buttons):
+    def _show_custom_confirm(self, title, message, buttons, parent=None):
         """Exibe diálogo de confirmação com botões personalizados"""
-        dialog = tk.Toplevel(self.root)
+        parent = parent or self._dialog_parent()
+        dialog = tk.Toplevel(parent)
         dialog.title(title)
-        dialog.transient(self.root)
+        dialog.transient(parent)
         dialog.grab_set()
         dialog.attributes('-topmost', True)
         dialog.resizable(False, False)
@@ -1317,17 +1381,110 @@ class MDFAutomationGUIv2:
         for col in range(min(3, len(buttons))):
             button_frame.grid_columnconfigure(col, weight=1)
 
-        dialog.update_idletasks()
-        width = dialog.winfo_width()
-        height = dialog.winfo_height()
-        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (width // 2)
-        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (height // 2)
-        dialog.geometry(f"{width}x{height}+{x}+{y}")
+        self._center_dialog(dialog, parent)
 
         dialog.focus_force()
         dialog.wait_window()
 
         return result['value']
+
+    def _show_custom_alert(self, parent, title, message):
+        dialog = tk.Toplevel(parent)
+        dialog.title(title)
+        dialog.transient(parent)
+        dialog.grab_set()
+        dialog.attributes('-topmost', True)
+        dialog.resizable(False, False)
+
+        label = ttk.Label(dialog, text=message, justify=tk.LEFT, wraplength=440)
+        label.pack(padx=24, pady=(20, 12))
+
+        button = ttk.Button(dialog, text="OK", command=dialog.destroy)
+        button.pack(pady=(0, 20))
+
+        self._center_dialog(dialog, parent)
+        dialog.focus_force()
+        dialog.wait_window()
+
+    def _show_custom_prompt(self, parent, title, message, default_value=""):
+        dialog = tk.Toplevel(parent)
+        dialog.title(title)
+        dialog.transient(parent)
+        dialog.grab_set()
+        dialog.attributes('-topmost', True)
+        dialog.resizable(False, False)
+
+        ttk.Label(dialog, text=message, justify=tk.LEFT, wraplength=440).pack(padx=24, pady=(20, 12))
+
+        entry_var = tk.StringVar(value=default_value)
+        entry = ttk.Entry(dialog, textvariable=entry_var, width=48)
+        entry.pack(padx=24, pady=(0, 12))
+
+        result = {'value': None}
+
+        def on_confirm():
+            result['value'] = entry_var.get()
+            dialog.destroy()
+
+        def on_cancel():
+            result['value'] = None
+            dialog.destroy()
+
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(padx=24, pady=(0, 20), fill=tk.X)
+
+        ok_btn = ttk.Button(button_frame, text="OK", command=on_confirm)
+        ok_btn.pack(side=tk.LEFT, padx=(0, 6))
+
+        cancel_btn = ttk.Button(button_frame, text="Cancelar", command=on_cancel)
+        cancel_btn.pack(side=tk.LEFT)
+
+        self._center_dialog(dialog, parent)
+        entry.focus_set()
+        dialog.wait_window()
+
+        return result['value']
+
+    def _dialog_parent(self):
+        return self.root
+
+    def _ensure_dialog_parent_visible(self):
+        was_iconified = False
+        try:
+            state = self.root.state()
+            if state in ('iconic', 'iconified', 'withdrawn'):
+                was_iconified = True
+                self.root.deiconify()
+                self.root.update_idletasks()
+            self.root.lift()
+        except Exception:
+            pass
+        return was_iconified
+
+    def _restore_dialog_parent_state(self, was_iconified):
+        try:
+            if was_iconified:
+                self.root.iconify()
+        except Exception:
+            pass
+
+    def _center_dialog(self, dialog, parent):
+        dialog.update_idletasks()
+        width = dialog.winfo_width()
+        height = dialog.winfo_height()
+        try:
+            px = parent.winfo_rootx()
+            py = parent.winfo_rooty()
+            pw = parent.winfo_width()
+            ph = parent.winfo_height()
+            x = px + (pw // 2) - (width // 2)
+            y = py + (ph // 2) - (height // 2)
+        except Exception:
+            screen_width = dialog.winfo_screenwidth()
+            screen_height = dialog.winfo_screenheight()
+            x = (screen_width // 2) - (width // 2)
+            y = (screen_height // 2) - (height // 2)
+        dialog.geometry(f"{width}x{height}+{x}+{y}")
     
     def _update_stats(self):
         """Atualiza estatísticas"""
