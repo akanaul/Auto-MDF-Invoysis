@@ -5,12 +5,11 @@ Sistema avançado de automação para emissão e averbação de MDF-e com integr
 ## 📋 Descrição
 
 Este projeto automatiza o processo de:
-1. Busca e download de CT-e
-2. Preenchimento de dados MDF-e
-3. Configuração de modal rodoviário
-4. Preenchimento de informações adicionais e seguros
-5. Averbação no sistema segurador
-6. Coleta de dados de averbação
+1. Preenchimento de dados MDF-e
+2. Configuração parcial de modal rodoviário
+3. Preenchimento de informações adicionais e seguros
+4. Averbação no sistema segurador
+5. Coleta de dados de averbação
 
 ## 🚀 Início Rápido
 
