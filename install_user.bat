@@ -10,11 +10,11 @@ if %ERRORLEVEL% NEQ 0 (
   exit /b 1
 )
 
-echo Atualizando pip...
-python -m pip install --upgrade pip --quiet
+echo Atualizando pip, setuptools e wheel...
+python -m pip install --upgrade pip setuptools wheel
 
-echo Instalando requisitos (escopo --user)...
-python -m pip install --user -r requirements.txt --quiet
+echo Instalando dependencias do projeto para o usuario atual...
+python -m pip install --user --upgrade -r requirements.txt
 
 echo.
 echo Instalacao concluida com sucesso (escopo --user)!

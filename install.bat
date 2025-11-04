@@ -10,23 +10,27 @@ if %ERRORLEVEL% NEQ 0 (
   exit /b 1
 )
 
-echo Criando virtual environment...
-if not exist venv (
-  python -m venv venv
-  echo Virtual environment criado em .\venv
+set VENV_DIR=.venv
+
+echo Criando ambiente virtual...
+if not exist %VENV_DIR% (
+  python -m venv %VENV_DIR%
+  echo Ambiente virtual criado em .\%VENV_DIR%
 ) else (
-  echo Virtual environment ja existe em .\venv - pulando criacao
+  echo Ambiente virtual ja existe em .\%VENV_DIR% - pulando criacao
 )
 
-echo Atualizando pip e instalando requisitos...
-call .\venv\Scripts\python.exe -m pip install --upgrade pip --quiet
-call .\venv\Scripts\python.exe -m pip install -r requirements.txt --quiet
+echo Atualizando ferramentas basicas do pip...
+call .\%VENV_DIR%\Scripts\python.exe -m pip install --upgrade pip setuptools wheel
+
+echo Instalando dependencias do projeto (obrigatorias e recomendadas)...
+call .\%VENV_DIR%\Scripts\python.exe -m pip install --upgrade -r requirements.txt
 
 echo.
 echo Instalacao concluida com sucesso!
 echo.
-echo Para usar, ative o venv com:
-echo     .\venv\Scripts\activate.bat
+echo Para usar, ative o ambiente com:
+echo     .\%VENV_DIR%\Scripts\activate.bat
 echo.
 echo Entao execute a GUI com:
 echo     python AutoMDF-Start.py

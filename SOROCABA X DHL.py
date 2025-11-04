@@ -177,16 +177,18 @@ def prompt_topmost(*args, **kwargs):
 
 def alert_topmost(*args, **kwargs):
     """Exibe um alerta informativo em primeiro plano."""
-    text, title, _ = _parse_text_title_defaults(args, kwargs, 'Informação')
+    text, title, button_default = _parse_text_title_defaults(args, kwargs, 'Informação')
+    button_text = kwargs.get('button', button_default or 'OK')
 
     _, handled = _bridge_request({
         'type': 'alert',
         'text': text or '',
-        'title': title or 'Informação'
+        'title': title or 'Informação',
+        'button': button_text
     })
     if handled:
         ensure_browser_focus()
-        return 'OK'
+        return button_text
 
     root = tk.Tk()
     root.withdraw()
@@ -201,7 +203,7 @@ def alert_topmost(*args, **kwargs):
         root.destroy()
         ensure_browser_focus()
 
-    return 'OK'
+    return button_text
 
 
 def confirm_topmost(*args, **kwargs):
@@ -279,6 +281,12 @@ def confirm_topmost(*args, **kwargs):
     root.destroy()
     ensure_browser_focus()
     return result['value']
+
+
+# Redirecionar diálogos padrão do PyAutoGUI para a integração da GUI principal
+pyautogui.prompt = prompt_topmost
+pyautogui.alert = alert_topmost
+pyautogui.confirm = confirm_topmost
 pyautogui.FAILSAFE = True  # Pausa de emergência movendo o mouse para o canto superior esquerdo
 #---------------------------------------------------------------
 

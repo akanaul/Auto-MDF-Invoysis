@@ -78,10 +78,14 @@ Auto MDF InvoISys/
 
 ## 📦 Dependências
 
+**Obrigatórias**
 - `pyautogui` - Automação de GUI
 - `pyperclip` - Gerenciamento de clipboard
 
-Instaladas automaticamente via `install.bat`, `install_user.bat` ou via GUI.
+**Recomendadas**
+- `pygetwindow` - Ajuda a manter a janela do navegador em foco durante as automações
+
+Todas podem ser instaladas automaticamente via `install.bat`, `install_user.bat` ou pela GUI.
 
 ## 🎯 Recursos
 

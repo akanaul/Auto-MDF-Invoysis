@@ -19,10 +19,25 @@ import time
 import subprocess
 import json
 import queue
+from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime
 from progress_manager import ProgressManager
 import importlib.util
+
+try:
+    import pygetwindow as gw  # type: ignore
+except Exception:
+    gw = None
+
+BROWSER_WINDOW_KEYWORDS = [
+    'google chrome',
+    'microsoft edge',
+    'mozilla firefox',
+    'brave',
+    'opera',
+    'opera gx'
+]
 
 BASE_DIR = Path(__file__).resolve().parent
 BRIDGE_PREFIX = "__MDF_GUI_BRIDGE__"
@@ -30,100 +45,167 @@ BRIDGE_ACK = "__MDF_GUI_ACK__"
 BRIDGE_CANCEL = "__MDF_GUI_CANCEL__"
 
 
+@dataclass(frozen=True)
+class DependencySpec:
+    package: str
+    description: str
+    required: bool = True
+
+
 class DependencyChecker:
     """Verifica e gerencia instalação de dependências"""
-    
+
+    DEPENDENCIES: tuple[DependencySpec, ...] = (
+        DependencySpec('pyautogui', 'Automação do mouse e do teclado'),
+        DependencySpec('pyperclip', 'Copiar e colar via área de transferência'),
+        DependencySpec('pygetwindow', 'Detectar e focar janelas automaticamente', required=False),
+    )
+
     # Cache de verificação (válido por 5 minutos)
-    _cache = {}
+    _cache: dict[tuple[str, bool], tuple[list[str], list[str], float]] = {}
     _cache_timeout = 300  # segundos
-    
+
     def __init__(self):
-        self.required_packages = ['pyautogui', 'pyperclip']
-        self.missing_packages = []
-    
-    def check_dependencies(self, use_cache=True):
-        """Verifica se todas as dependências estão instaladas"""
-        # Verificar cache primeiro
+        self.required_packages = [dep.package for dep in self.DEPENDENCIES if dep.required]
+        self.optional_packages = [dep.package for dep in self.DEPENDENCIES if not dep.required]
+        self.missing_packages: list[str] = []
+        self.missing_optional_packages: list[str] = []
+
+    def check_dependencies(self, include_optional=False, use_cache=True):
+        """Retorna True se todas as dependências obrigatórias estiverem instaladas."""
+        cache_key = (','.join(sorted(self.required_packages + (self.optional_packages if include_optional else []))), include_optional)
+
         if use_cache:
-            cache_key = tuple(sorted(self.required_packages))
-            cached_result = self._get_from_cache(cache_key)
-            if cached_result is not None:
-                self.missing_packages = cached_result
+            cached = self._get_from_cache(cache_key)
+            if cached is not None:
+                self.missing_packages, self.missing_optional_packages = cached
                 return len(self.missing_packages) == 0
-        
-        # Verificação real
-        self.missing_packages = []
-        
-        for package in self.required_packages:
-            if not self._is_package_installed(package):
-                self.missing_packages.append(package)
-        
-        # Atualizar cache
+
+        missing_required: list[str] = []
+        missing_optional: list[str] = []
+
+        for dep in self.DEPENDENCIES:
+            if not dep.required and not include_optional:
+                continue
+            if not self._is_package_installed(dep.package):
+                if dep.required:
+                    missing_required.append(dep.package)
+                else:
+                    missing_optional.append(dep.package)
+
+        self.missing_packages = missing_required
+        self.missing_optional_packages = missing_optional
+
         if use_cache:
-            self._save_to_cache(cache_key, self.missing_packages[:])
-        
+            self._save_to_cache(cache_key, missing_required[:], missing_optional[:])
+
         return len(self.missing_packages) == 0
-    
+
     @classmethod
     def _get_from_cache(cls, key):
         """Obtém resultado do cache se ainda válido"""
         if key in cls._cache:
-            result, timestamp = cls._cache[key]
+            missing_required, missing_optional, timestamp = cls._cache[key]
             if time.time() - timestamp < cls._cache_timeout:
-                return result
-            else:
-                # Cache expirado, remover
-                del cls._cache[key]
+                return missing_required[:], missing_optional[:]
+            del cls._cache[key]
         return None
-    
+
     @classmethod
-    def _save_to_cache(cls, key, result):
+    def _save_to_cache(cls, key, missing_required, missing_optional):
         """Salva resultado no cache"""
-        cls._cache[key] = (result, time.time())
-    
+        cls._cache[key] = (missing_required[:], missing_optional[:], time.time())
+
     @classmethod
     def clear_cache(cls):
         """Limpa o cache de verificação"""
         cls._cache.clear()
-    
+
     def _is_package_installed(self, package_name):
         """Verifica se um pacote está instalado"""
         spec = importlib.util.find_spec(package_name)
         return spec is not None
-    
-    def get_missing_packages(self):
-        """Retorna lista de pacotes faltantes"""
-        return self.missing_packages
-    
-    @staticmethod
-    def install_dependencies():
-        """Tenta instalar as dependências automaticamente"""
-        try:
-            requirements_path = BASE_DIR / 'requirements.txt'
 
-            # Verificar se requirements.txt existe
-            if not requirements_path.exists():
-                return False, "Arquivo 'requirements.txt' não encontrado"
-            
-            # Tentar instalar com pip
-            result = subprocess.run(
-                [sys.executable, '-m', 'pip', 'install', '-r', str(requirements_path), '--quiet'],
+    def get_missing_packages(self):
+        """Retorna lista de pacotes obrigatórios faltantes"""
+        return self.missing_packages
+
+    def get_missing_optional_packages(self):
+        """Retorna lista de pacotes opcionais recomendados faltantes"""
+        return self.missing_optional_packages
+
+    @classmethod
+    def install_dependencies(cls, include_optional=True):
+        """Instala dependências obrigatórias e, opcionalmente, as recomendadas."""
+        packages_to_install: list[DependencySpec] = []
+        for spec in cls.DEPENDENCIES:
+            if spec.required or include_optional:
+                packages_to_install.append(spec)
+
+        if not packages_to_install:
+            return True, "Nenhum pacote para instalar.", ""
+
+        install_logs: list[str] = []
+
+        try:
+            upgrade_cmd = [sys.executable, '-m', 'pip', 'install', '--upgrade', 'pip', 'setuptools', 'wheel']
+            upgrade_result = subprocess.run(
+                upgrade_cmd,
                 capture_output=True,
                 text=True,
-                timeout=120,
                 cwd=str(BASE_DIR)
             )
-            
-            # Limpar cache após instalação
-            DependencyChecker.clear_cache()
-            
-            if result.returncode == 0:
-                return True, "Dependências instaladas com sucesso!"
-            else:
-                return False, f"Erro ao instalar: {result.stderr}"
-        
-        except Exception as e:
-            return False, f"Erro: {str(e)}"
+            install_logs.append(upgrade_result.stdout.strip())
+            if upgrade_result.stderr:
+                install_logs.append(upgrade_result.stderr.strip())
+        except Exception as exc:
+            install_logs.append(f"Falha ao atualizar pip: {exc}")
+
+        required_failures: list[str] = []
+        optional_failures: list[str] = []
+
+        for spec in packages_to_install:
+            cmd = [sys.executable, '-m', 'pip', 'install', '--upgrade', spec.package]
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                cwd=str(BASE_DIR)
+            )
+            log_chunk = result.stdout.strip()
+            err_chunk = result.stderr.strip()
+            if log_chunk:
+                install_logs.append(log_chunk)
+            if err_chunk:
+                install_logs.append(err_chunk)
+
+            if result.returncode != 0:
+                if spec.required:
+                    required_failures.append(f"{spec.package}: {err_chunk or 'erro não informado'}")
+                else:
+                    optional_failures.append(f"{spec.package}: {err_chunk or 'erro não informado'}")
+
+        cls.clear_cache()
+
+        combined_log = "\n".join(chunk for chunk in install_logs if chunk).strip()
+
+        if required_failures:
+            message = "Não foi possível instalar todos os pacotes obrigatórios."
+            detail_lines = required_failures + optional_failures
+            if combined_log:
+                detail_lines.append(combined_log)
+            details = "\n".join(detail_lines).strip()
+            return False, message, details.strip()
+
+        if optional_failures:
+            message = "Pacotes obrigatórios instalados. Alguns opcionais falharam."
+            detail_lines = optional_failures
+            if combined_log:
+                detail_lines.append(combined_log)
+            details = "\n".join(detail_lines).strip()
+            return True, message, details.strip()
+
+        return True, "Dependências instaladas com sucesso!", ""
 
 
 class ScriptExecutor:
@@ -344,12 +426,14 @@ class ScriptExecutor:
 class DependencyInstallWindow:
     """Janela separada para instalação de dependências"""
     
-    def __init__(self, parent, missing_packages, all_packages=None, initial_message=None):
+    def __init__(self, parent, checker, initial_message=None):
         self.parent = parent
-        self.missing_packages = missing_packages
-        self.all_packages = all_packages or []
-        self.initial_message = initial_message
+        self.checker = checker
+        self.initial_message = initial_message or "Aguardando ação..."
         self.installation_complete = False
+        self.missing_packages = checker.get_missing_packages()
+        self.missing_optional = checker.get_missing_optional_packages()
+        self.dependency_specs = checker.DEPENDENCIES
 
         self.window = tk.Toplevel(parent)
         self.window.title("⚠️  Instalação de Dependências (OBRIGATÓRIO)")
@@ -419,39 +503,48 @@ class DependencyInstallWindow:
         description.pack(anchor=tk.W, pady=(10, 0))
         
         # Lista de pacotes
-        packages_frame = ttk.LabelFrame(content_frame, text="Pacotes Faltantes", padding=15)
+        packages_frame = ttk.LabelFrame(content_frame, text="Dependências obrigatórias", padding=15)
         packages_frame.pack(fill=tk.X, padx=20, pady=(0, 15))
-        
+
+        required_specs = [spec for spec in self.dependency_specs if spec.required]
         if self.missing_packages:
-            for package in self.missing_packages:
-                pkg_label = ttk.Label(
-                    packages_frame,
-                    text=f"• {package}",
-                    font=('Segoe UI', 10),
-                    foreground='#ef4444'
-                )
-                pkg_label.pack(anchor=tk.W, pady=3)
+            for spec in required_specs:
+                if spec.package in self.missing_packages:
+                    ttk.Label(
+                        packages_frame,
+                        text=f"• {spec.package} — {spec.description}",
+                        font=('Segoe UI', 10),
+                        foreground='#ef4444'
+                    ).pack(anchor=tk.W, pady=3)
         else:
             ttk.Label(
                 packages_frame,
-                text="Nenhuma dependência obrigatória faltando.",
+                text="Todas as dependências obrigatórias estão presentes.",
                 font=('Segoe UI', 10),
                 foreground='#10b981'
             ).pack(anchor=tk.W, pady=3)
-            if self.all_packages:
-                ttk.Label(
-                    packages_frame,
-                    text="Dependências monitoradas:",
-                    font=('Segoe UI', 9, 'italic'),
-                    foreground='#666'
-                ).pack(anchor=tk.W, pady=(10, 3))
-                for package in self.all_packages:
+
+        optional_specs = [spec for spec in self.dependency_specs if not spec.required]
+        if optional_specs:
+            optional_frame = ttk.LabelFrame(content_frame, text="Pacotes recomendados", padding=15)
+            optional_frame.pack(fill=tk.X, padx=20, pady=(0, 15))
+
+            if self.missing_optional:
+                for spec in optional_specs:
+                    color = '#0ea5e9' if spec.package not in self.missing_optional else '#f97316'
                     ttk.Label(
-                        packages_frame,
-                        text=f"• {package}",
+                        optional_frame,
+                        text=f"• {spec.package} — {spec.description}",
                         font=('Segoe UI', 9),
-                        foreground='#1e3a8a'
-                    ).pack(anchor=tk.W)
+                        foreground=color
+                    ).pack(anchor=tk.W, pady=2)
+            else:
+                ttk.Label(
+                    optional_frame,
+                    text="Todos os recursos recomendados estão instalados (ótimo!).",
+                    font=('Segoe UI', 9),
+                    foreground='#0ea5e9'
+                ).pack(anchor=tk.W, pady=2)
         
         # Informações sobre instalação
         info_frame = ttk.LabelFrame(content_frame, text="Opções de Instalação", padding=15)
@@ -484,20 +577,22 @@ class DependencyInstallWindow:
         option2_desc = ttk.Label(
             info_frame,
             text="Execute um dos arquivos de instalação no diretório do projeto:\n"
-            "• install.bat (cria um virtualenv isolado)\n"
-            "• install_user.bat (instala no perfil do usuário)",
+            "• install.bat (cria e usa o ambiente .venv do projeto)\n"
+            "• install_user.bat (instala no perfil do usuário Windows)",
             font=('Segoe UI', 9),
             foreground='#666'
         )
         option2_desc.pack(anchor=tk.W, pady=(0, 0))
         
         # Status de instalação
-        status_text = self.initial_message or "Aguardando ação..."
+        status_text = self.initial_message
         status_color = '#666'
-        if self.initial_message and '✅' in self.initial_message:
+        if '✅' in status_text:
             status_color = '#10b981'
-        elif self.initial_message and '⚠️' in self.initial_message:
+        elif '⚠️' in status_text:
             status_color = '#f59e0b'
+        elif 'ℹ️' in status_text:
+            status_color = '#0ea5e9'
         
         footer_frame = ttk.Frame(self.window)
         footer_frame.pack(fill=tk.X, padx=20, pady=(0, 20))
@@ -553,21 +648,30 @@ class DependencyInstallWindow:
     
     def _run_installation(self):
         """Executa a instalação em background"""
-        success, message = DependencyChecker.install_dependencies()
-        
+        success, message, details = DependencyChecker.install_dependencies(include_optional=True)
+
+        post_check = DependencyChecker()
+        post_check.check_dependencies(include_optional=True, use_cache=False)
+        self.missing_packages = post_check.get_missing_packages()
+        self.missing_optional = post_check.get_missing_optional_packages()
+
+        full_message = message
+        if details:
+            full_message = f"{message}\n\n{details}"
+
         if success:
-            self.status_label.config(text=f"✅ {message}", foreground='#10b981')
+            self.status_label.config(text=f"✅ {full_message}", foreground='#10b981')
             self.installation_complete = True
-            
+
             # Aguardar 2 segundos e fechar
             time.sleep(2)
             self.window.destroy()
         else:
             self.status_label.config(
-                text=f"❌ {message}\n\nTente usar o install.bat ou install_user.bat manualmente.",
+                text=f"❌ {full_message}\n\nTente usar o install.bat ou install_user.bat manualmente.",
                 foreground='#ef4444'
             )
-            
+
             self.install_btn.config(state=tk.NORMAL)
             self.retry_btn.config(state=tk.NORMAL)
             self.cancel_btn.config(state=tk.NORMAL)
@@ -575,30 +679,48 @@ class DependencyInstallWindow:
     def _check_again(self):
         """Verifica as dependências novamente"""
         checker = DependencyChecker()
-        if checker.check_dependencies():
-            self.status_label.config(
-                text="✅ Todas as dependências estão instaladas!",
-                foreground='#10b981'
-            )
+        checker.check_dependencies(include_optional=True, use_cache=False)
+
+        missing_required = checker.get_missing_packages()
+        missing_optional = checker.get_missing_optional_packages()
+
+        self.missing_packages = missing_required
+        self.missing_optional = missing_optional
+
+        if not missing_required:
+            if missing_optional:
+                optional_text = ", ".join(missing_optional)
+                self.status_label.config(
+                    text=f"✅ Obrigatórios instalados. Pacotes recomendados pendentes: {optional_text}",
+                    foreground='#0ea5e9'
+                )
+            else:
+                self.status_label.config(
+                    text="✅ Todas as dependências estão instaladas!",
+                    foreground='#10b981'
+                )
             self.installation_complete = True
-            
+
             time.sleep(1)
             self.window.destroy()
         else:
             self.status_label.config(
-                text="❌ Ainda há pacotes faltantes. Tente novamente.",
+                text=f"❌ Ainda faltam: {', '.join(missing_required)}",
                 foreground='#ef4444'
             )
     
     def on_cancel(self):
         """Cancela a instalação"""
-        if messagebox.askyesno(
-            "Cancelar",
-            "As dependências são OBRIGATÓRIAS para usar a automação.\n\n"
-            "Tem certeza que deseja cancelar?"
-        ):
+        if self.missing_packages:
+            confirm = messagebox.askyesno(
+                "Cancelar",
+                "As dependências obrigatórias continuam faltando.\n\n"
+                "Tem certeza que deseja sair sem instalar?"
+            )
+            if confirm:
+                self.window.destroy()
+        else:
             self.window.destroy()
-            self.parent.destroy()
 
 
 class MDFAutomationGUIv2:
@@ -613,6 +735,8 @@ class MDFAutomationGUIv2:
         self.root.attributes("-topmost", False)
         self.topmost_var = tk.BooleanVar(value=False)
         self.execution_window_state = {'was_iconified': False, 'was_topmost': False}
+        self._last_browser_window = None
+        self._active_overlay = None
         
         # Inicializar verificador de dependências (sem verificação obrigatória)
         self.dependency_checker = DependencyChecker()
@@ -858,21 +982,37 @@ class MDFAutomationGUIv2:
     def start_new_execution(self):
         """Inicia uma nova execução de script"""
         # Verificar dependências antes de executar
-        if not self.dependency_checker.check_dependencies():
-            missing = self.dependency_checker.get_missing_packages()
+        self.dependency_checker.check_dependencies(include_optional=True)
+        missing_required = self.dependency_checker.get_missing_packages()
+        missing_optional = self.dependency_checker.get_missing_optional_packages()
+
+        if missing_required:
             response = messagebox.showwarning(
                 "Dependências Faltando",
                 f"❌ As seguintes dependências estão faltando:\n\n"
-                f"{', '.join(missing)}\n\n"
+                f"{', '.join(missing_required)}\n\n"
                 f"É OBRIGATÓRIO instalar as dependências antes de executar scripts.\n\n"
                 f"Deseja instalar agora?",
                 type=messagebox.YESNO
             )
-            
+
             if response == messagebox.YES:
                 self._install_dependencies_manual()
-            
+
             return
+
+        if missing_optional:
+            if messagebox.askyesno(
+                "Pacotes recomendados",
+                "Os pacotes recomendados ajudam a manter o navegador em foco durante a automação.\n\n"
+                f"Faltando: {', '.join(missing_optional)}\n\n"
+                "Deseja instalá-los agora?"
+            ):
+                self._install_dependencies_manual()
+                # Revalidar e impedir execução caso o usuário cancele o instalador
+                self.dependency_checker.check_dependencies(include_optional=True, use_cache=False)
+                if self.dependency_checker.get_missing_packages():
+                    return
         
         # Verificar se já há execução em andamento
         if self.current_execution and self.current_execution.is_running:
@@ -901,7 +1041,7 @@ class MDFAutomationGUIv2:
         executor = ScriptExecutor(script_path, script_name, execution_id)
         self.current_execution = executor
 
-        # Reorganizar janelas: alertas (topmost) > GUI > navegador
+        # Reorganizar janelas: manter GUI acessível sem roubar foco do navegador
         previous_state = {
             'was_iconified': self.root.state() in ('iconic', 'iconified', 'withdrawn'),
             'was_topmost': self.topmost_var.get()
@@ -911,21 +1051,26 @@ class MDFAutomationGUIv2:
         if previous_state['was_iconified']:
             self.root.deiconify()
 
-        # Trazer a GUI para frente sem deixá-la permanentemente topmost
-        if previous_state['was_topmost']:
+        self.root.update_idletasks()
+
+        if self.topmost_var.get():
             self.topmost_var.set(False)
             self._toggle_topmost()
-
-        self.root.attributes('-topmost', True)
-        self.root.update_idletasks()
-        self.root.lift()
-        self.root.attributes('-topmost', False)
-        self.root.update_idletasks()
+        else:
+            self.root.attributes('-topmost', False)
 
         if hasattr(self, 'topmost_checkbox'):
             self.topmost_checkbox.state(['disabled'])
 
-        window_event_message = "🪟 Janela principal posicionada acima do navegador (alertas permanecem em primeiro plano)."
+        if gw is not None:
+            self.root.after(250, self._restore_external_focus)
+            window_event_message = (
+                "🪟 Janela principal mantida visível em segundo plano. Foco redirecionado ao navegador."
+            )
+        else:
+            window_event_message = (
+                "🪟 Janela principal mantida visível em segundo plano. Instale 'pygetwindow' para redirecionar o foco do navegador automaticamente."
+            )
         
         # Iniciar execução em thread
         threading.Thread(
@@ -1317,7 +1462,8 @@ class MDFAutomationGUIv2:
         try:
             if dialog_type == 'alert':
                 self._append_log_message(f"🔔 Alerta do script: {message}", 'info')
-                self._show_custom_alert(parent, title, message)
+                button_text = payload.get('button') or "OK"
+                self._show_custom_alert(parent, title, message, button_text)
                 executor.send_bridge_response(BRIDGE_ACK)
                 return
 
@@ -1346,104 +1492,228 @@ class MDFAutomationGUIv2:
         finally:
             self._restore_dialog_parent_state(was_iconified)
 
+    def _create_overlay_container(self, title):
+        self._destroy_overlay()
+        overlay = tk.Frame(self.root, bg='#111827', highlightthickness=0)
+        overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
+        overlay.lift()
+
+        container_bg = '#f8fafc'
+        container = tk.Frame(
+            overlay,
+            bg=container_bg,
+            bd=1,
+            relief='ridge',
+            highlightthickness=1,
+            highlightbackground='#60a5fa'
+        )
+        container.place(relx=0.5, rely=0.5, anchor='center')
+
+        title_label = tk.Label(
+            container,
+            text=title or "Auto MDF InvoISys",
+            font=('Segoe UI', 12, 'bold'),
+            bg=container_bg,
+            fg='#0f172a'
+        )
+        title_label.pack(padx=24, pady=(18, 6))
+
+        ttk.Separator(container, orient='horizontal').pack(fill=tk.X, padx=24, pady=(0, 12))
+
+        overlay.focus_set()
+        self._active_overlay = overlay
+        return overlay, container
+
+    def _destroy_overlay(self):
+        if self._active_overlay and self._active_overlay.winfo_exists():
+            try:
+                self._active_overlay.destroy()
+            except Exception:
+                pass
+        self._active_overlay = None
+
     def _show_custom_confirm(self, title, message, buttons, parent=None):
-        """Exibe diálogo de confirmação com botões personalizados"""
-        parent = parent or self._dialog_parent()
-        dialog = tk.Toplevel(parent)
-        dialog.title(title)
-        dialog.transient(parent)
-        dialog.grab_set()
-        dialog.attributes('-topmost', True)
-        dialog.resizable(False, False)
+        """Exibe diálogo de confirmação integrado na própria GUI"""
+        if not buttons:
+            buttons = ['OK']
 
-        result = {'value': None}
+        result_var = tk.StringVar(value="")
+        overlay, container = self._create_overlay_container(title or "Confirmação")
 
-        def on_select(value):
-            result['value'] = value
-            dialog.destroy()
+        message_label = tk.Label(
+            container,
+            text=message,
+            justify='left',
+            wraplength=440,
+            font=('Segoe UI', 10),
+            bg=container.cget('bg'),
+            fg='#1f2937'
+        )
+        message_label.pack(padx=24, pady=(12, 18))
 
-        def on_close():
-            result['value'] = None
-            dialog.destroy()
+        button_frame = tk.Frame(container, bg=container.cget('bg'))
+        button_frame.pack(padx=24, pady=(0, 16), fill=tk.X)
 
-        dialog.protocol('WM_DELETE_WINDOW', on_close)
+        columns = min(3, len(buttons))
+        columns = columns if columns > 0 else 1
 
-        label = ttk.Label(dialog, text=message, justify=tk.LEFT, wraplength=440)
-        label.pack(padx=24, pady=(20, 12))
-
-        button_frame = ttk.Frame(dialog)
-        button_frame.pack(padx=24, pady=(0, 20), fill=tk.X)
+        def finalize_choice(choice):
+            result_var.set(choice)
+            self._destroy_overlay()
 
         for idx, button_text in enumerate(buttons):
-            btn = ttk.Button(button_frame, text=button_text, command=lambda val=button_text: on_select(val))
-            btn.grid(row=idx // 3, column=idx % 3, padx=4, pady=4, sticky='ew')
-
-        for col in range(min(3, len(buttons))):
+            btn = ttk.Button(button_frame, text=button_text, command=lambda val=button_text: finalize_choice(val))
+            row = idx // columns
+            col = idx % columns
+            btn.grid(row=row, column=col, padx=4, pady=4, sticky='ew')
             button_frame.grid_columnconfigure(col, weight=1)
+            if idx == 0:
+                btn.focus_set()
 
-        self._center_dialog(dialog, parent)
+        def handle_escape(event=None):
+            fallback = 'Cancel' if 'Cancel' in buttons else buttons[-1]
+            finalize_choice(fallback)
 
-        dialog.focus_force()
-        dialog.wait_window()
+        overlay.bind('<Escape>', handle_escape)
 
-        return result['value']
+        self.root.wait_variable(result_var)
+        choice = result_var.get()
+        return choice or None
 
-    def _show_custom_alert(self, parent, title, message):
-        dialog = tk.Toplevel(parent)
-        dialog.title(title)
-        dialog.transient(parent)
-        dialog.grab_set()
-        dialog.attributes('-topmost', True)
-        dialog.resizable(False, False)
+    def _show_custom_alert(self, parent, title, message, button_text="OK"):
+        result_var = tk.StringVar(value="")
+        overlay, container = self._create_overlay_container(title or "Alerta")
 
-        label = ttk.Label(dialog, text=message, justify=tk.LEFT, wraplength=440)
-        label.pack(padx=24, pady=(20, 12))
+        message_label = tk.Label(
+            container,
+            text=message,
+            justify='left',
+            wraplength=440,
+            font=('Segoe UI', 10),
+            bg=container.cget('bg'),
+            fg='#1f2937'
+        )
+        message_label.pack(padx=24, pady=(12, 18))
 
-        button = ttk.Button(dialog, text="OK", command=dialog.destroy)
-        button.pack(pady=(0, 20))
+        def confirm(event=None):
+            result_var.set(button_text or "OK")
+            self._destroy_overlay()
 
-        self._center_dialog(dialog, parent)
-        dialog.focus_force()
-        dialog.wait_window()
+        button = ttk.Button(container, text=button_text or "OK", command=confirm)
+        button.pack(pady=(0, 18))
+        button.focus_set()
+
+        overlay.bind('<Return>', confirm)
+        overlay.bind('<Escape>', confirm)
+
+        self.root.wait_variable(result_var)
+        return result_var.get() or (button_text or "OK")
 
     def _show_custom_prompt(self, parent, title, message, default_value=""):
-        dialog = tk.Toplevel(parent)
-        dialog.title(title)
-        dialog.transient(parent)
-        dialog.grab_set()
-        dialog.attributes('-topmost', True)
-        dialog.resizable(False, False)
+        cancel_token = "__MDF_PROMPT_CANCEL__"
+        result_var = tk.StringVar(value="")
+        overlay, container = self._create_overlay_container(title or "Entrada")
 
-        ttk.Label(dialog, text=message, justify=tk.LEFT, wraplength=440).pack(padx=24, pady=(20, 12))
+        message_label = tk.Label(
+            container,
+            text=message,
+            justify='left',
+            wraplength=440,
+            font=('Segoe UI', 10),
+            bg=container.cget('bg'),
+            fg='#1f2937'
+        )
+        message_label.pack(padx=24, pady=(12, 10))
 
-        entry_var = tk.StringVar(value=default_value)
-        entry = ttk.Entry(dialog, textvariable=entry_var, width=48)
-        entry.pack(padx=24, pady=(0, 12))
+        entry_var = tk.StringVar(value=default_value or "")
+        entry = ttk.Entry(container, textvariable=entry_var, width=48)
+        entry.pack(padx=24, pady=(0, 16))
 
-        result = {'value': None}
+        button_frame = tk.Frame(container, bg=container.cget('bg'))
+        button_frame.pack(padx=24, pady=(0, 18))
 
-        def on_confirm():
-            result['value'] = entry_var.get()
-            dialog.destroy()
+        def confirm(event=None):
+            result_var.set(entry_var.get())
+            self._destroy_overlay()
 
-        def on_cancel():
-            result['value'] = None
-            dialog.destroy()
+        def cancel(event=None):
+            result_var.set(cancel_token)
+            self._destroy_overlay()
 
-        button_frame = ttk.Frame(dialog)
-        button_frame.pack(padx=24, pady=(0, 20), fill=tk.X)
-
-        ok_btn = ttk.Button(button_frame, text="OK", command=on_confirm)
+        ok_btn = ttk.Button(button_frame, text="OK", command=confirm)
         ok_btn.pack(side=tk.LEFT, padx=(0, 6))
 
-        cancel_btn = ttk.Button(button_frame, text="Cancelar", command=on_cancel)
+        cancel_btn = ttk.Button(button_frame, text="Cancelar", command=cancel)
         cancel_btn.pack(side=tk.LEFT)
 
-        self._center_dialog(dialog, parent)
         entry.focus_set()
-        dialog.wait_window()
+        entry.icursor(tk.END)
+        entry.bind('<Return>', confirm)
+        overlay.bind('<Escape>', cancel)
 
-        return result['value']
+        self.root.wait_variable(result_var)
+
+        value = result_var.get()
+        if value == cancel_token:
+            return None
+        return value
+
+    def _is_browser_window(self, window):
+        if gw is None or window is None:
+            return False
+        try:
+            title = (window.title or '').lower()
+        except Exception:
+            return False
+        if not title.strip():
+            return False
+        return any(keyword in title for keyword in BROWSER_WINDOW_KEYWORDS)
+
+    def _activate_external_window(self, window):
+        if gw is None or window is None:
+            return False
+        try:
+            if getattr(window, 'isMinimized', False):
+                window.restore()
+            window.activate()
+            self._last_browser_window = window
+            return True
+        except Exception:
+            return False
+
+    def _focus_browser_window(self, retry=True):
+        if gw is None:
+            return False
+
+        candidates = []
+        try:
+            active = gw.getActiveWindow()
+            if self._is_browser_window(active):
+                candidates.append(active)
+        except Exception:
+            active = None
+
+        if self._last_browser_window and self._is_browser_window(self._last_browser_window):
+            if self._last_browser_window not in candidates:
+                candidates.append(self._last_browser_window)
+
+        try:
+            for window in gw.getAllWindows():
+                if self._is_browser_window(window) and window not in candidates:
+                    candidates.append(window)
+        except Exception:
+            pass
+
+        for window in candidates:
+            if self._activate_external_window(window):
+                return True
+
+        if retry:
+            self.root.after(600, lambda: self._focus_browser_window(retry=False))
+        return False
+
+    def _restore_external_focus(self):
+        self._focus_browser_window()
 
     def _dialog_parent(self):
         return self.root
@@ -1467,25 +1737,9 @@ class MDFAutomationGUIv2:
                 self.root.iconify()
         except Exception:
             pass
+        if gw is not None:
+            self.root.after(250, self._restore_external_focus)
 
-    def _center_dialog(self, dialog, parent):
-        dialog.update_idletasks()
-        width = dialog.winfo_width()
-        height = dialog.winfo_height()
-        try:
-            px = parent.winfo_rootx()
-            py = parent.winfo_rooty()
-            pw = parent.winfo_width()
-            ph = parent.winfo_height()
-            x = px + (pw // 2) - (width // 2)
-            y = py + (ph // 2) - (height // 2)
-        except Exception:
-            screen_width = dialog.winfo_screenwidth()
-            screen_height = dialog.winfo_screenheight()
-            x = (screen_width // 2) - (width // 2)
-            y = (screen_height // 2) - (height // 2)
-        dialog.geometry(f"{width}x{height}+{x}+{y}")
-    
     def _update_stats(self):
         """Atualiza estatísticas"""
         if self.current_execution:
@@ -1532,17 +1786,21 @@ class MDFAutomationGUIv2:
     def _install_dependencies_manual(self):
         """Abre janela para instalar dependências manualmente"""
         # Atualiza status das dependências para mostrar informação real
-        if not self.dependency_checker.check_dependencies(use_cache=False):
-            missing = self.dependency_checker.get_missing_packages()
+        self.dependency_checker.check_dependencies(include_optional=True, use_cache=False)
+        missing_required = self.dependency_checker.get_missing_packages()
+        missing_optional = self.dependency_checker.get_missing_optional_packages()
+
+        if missing_required:
             initial_message = "⚠️ Dependências obrigatórias pendentes."
+        elif missing_optional:
+            optional_text = ', '.join(missing_optional)
+            initial_message = f"ℹ️ Todos os itens obrigatórios estão ok. Pacotes recomendados ausentes: {optional_text}."
         else:
-            missing = []
             initial_message = "✅ Todas as dependências estão instaladas. Você pode reinstalar se desejar."
 
         install_window = DependencyInstallWindow(
             self.root,
-            missing_packages=missing,
-            all_packages=list(self.dependency_checker.required_packages),
+            checker=self.dependency_checker,
             initial_message=initial_message
         )
         self.root.wait_window(install_window.window)
@@ -1556,22 +1814,39 @@ class MDFAutomationGUIv2:
         """Verifica e exibe status das dependências"""
         self.dependency_checker = DependencyChecker()
         
-        if self.dependency_checker.check_dependencies():
-            messagebox.showinfo(
-                "✅ Dependências OK",
-                "Todas as dependências estão instaladas corretamente!\n\n"
-                "Você pode executar os scripts sem problemas."
-            )
+        self.dependency_checker.check_dependencies(include_optional=True)
+
+        missing_required = self.dependency_checker.get_missing_packages()
+        missing_optional = self.dependency_checker.get_missing_optional_packages()
+
+        if not missing_required:
+            if missing_optional:
+                optional_text = ', '.join(missing_optional)
+                message = (
+                    "Todas as dependências obrigatórias estão instaladas.\n\n"
+                    f"Pacotes recomendados ausentes: {optional_text}.\n"
+                    "Eles ajudam a manter o navegador em foco durante a automação."
+                )
+                self._log_to_history(
+                    f"[{datetime.now().strftime('%H:%M:%S')}] ℹ️ Falta (opcional): {optional_text}",
+                    'warning'
+                )
+            else:
+                message = (
+                    "Todas as dependências estão instaladas corretamente!\n\n"
+                    "Você pode executar os scripts sem problemas."
+                )
+
+            messagebox.showinfo("✅ Dependências OK", message)
             self._log_to_history(
                 f"[{datetime.now().strftime('%H:%M:%S')}] ✅ Verificação de dependências: OK",
                 'success'
             )
         else:
-            missing = self.dependency_checker.get_missing_packages()
             response = messagebox.showwarning(
                 "❌ Dependências Faltando",
                 f"As seguintes dependências estão faltando:\n\n"
-                f"{', '.join(missing)}\n\n"
+                f"{', '.join(missing_required)}\n\n"
                 f"É obrigatório instalar antes de usar a automação.\n\n"
                 f"Deseja instalar agora?",
                 type=messagebox.YESNO
@@ -1581,7 +1856,7 @@ class MDFAutomationGUIv2:
                 self._install_dependencies_manual()
             
             self._log_to_history(
-                f"[{datetime.now().strftime('%H:%M:%S')}] ❌ Verificação de dependências: Faltando {', '.join(missing)}",
+                f"[{datetime.now().strftime('%H:%M:%S')}] ❌ Verificação de dependências: Faltando {', '.join(missing_required)}",
                 'error'
             )
     
@@ -1589,29 +1864,37 @@ class MDFAutomationGUIv2:
         """Verifica dependências quando erro é detectado e sugere instalação"""
         self.dependency_checker = DependencyChecker()
         
-        if not self.dependency_checker.check_dependencies():
-            missing = self.dependency_checker.get_missing_packages()
-            
+        self.dependency_checker.check_dependencies(include_optional=True, use_cache=False)
+        missing_required = self.dependency_checker.get_missing_packages()
+        missing_optional = self.dependency_checker.get_missing_optional_packages()
+
+        if missing_required:
             response = messagebox.showwarning(
                 "⚠️  Erro de Módulo Detectado",
                 f"O script encontrou um erro de módulo não encontrado.\n\n"
-                f"Dependências faltando: {', '.join(missing)}\n\n"
+                f"Dependências faltando: {', '.join(missing_required)}\n\n"
                 f"Deseja instalar as dependências agora?",
                 type=messagebox.YESNO
             )
-            
+
             if response == messagebox.YES:
                 self._install_dependencies_manual()
-            
+
             self._log_to_history(
-                f"[{datetime.now().strftime('%H:%M:%S')}] 📥 Faltando: {', '.join(missing)}",
+                f"[{datetime.now().strftime('%H:%M:%S')}] 📥 Faltando: {', '.join(missing_required)}",
                 'error'
             )
         else:
-            self._log_to_history(
-                f"[{datetime.now().strftime('%H:%M:%S')}] ✅ Todas as dependências estão instaladas",
-                'success'
-            )
+            if missing_optional:
+                self._log_to_history(
+                    f"[{datetime.now().strftime('%H:%M:%S')}] ℹ️ Falta instalar (recomendado): {', '.join(missing_optional)}",
+                    'warning'
+                )
+            else:
+                self._log_to_history(
+                    f"[{datetime.now().strftime('%H:%M:%S')}] ✅ Todas as dependências estão instaladas",
+                    'success'
+                )
     
     def on_closing(self):
         """Handler para fechar a janela"""
