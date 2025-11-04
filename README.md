@@ -175,6 +175,7 @@ O script `1. MDF.py` foi descontinuado e removido. Utilize a interface gráfica 
 - Botões: Iniciar, Parar
 - Informações gerais
 - Status em tempo real
+- Campo para selecionar a aba do navegador (0 mantém a atual, 1-9 definem a aba)
 - **Seção de Gerenciamento de Dependências:**
   - 📥 Instalar Dependências
   - ✓ Verificar Dependências

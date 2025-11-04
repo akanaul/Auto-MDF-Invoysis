@@ -26,6 +26,59 @@ from progress_manager import ProgressManager
 import importlib.util
 
 try:
+    import pyautogui  # type: ignore
+except Exception:
+    pyautogui = None
+
+if os.name == 'nt':
+    import ctypes
+    from ctypes import wintypes
+
+    _user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+    HWND_TOPMOST = -1
+    HWND_NOTOPMOST = -2
+    SWP_NOSIZE = 0x0001
+    SWP_NOMOVE = 0x0002
+    SWP_NOACTIVATE = 0x0010
+    SWP_SHOWWINDOW = 0x0040
+    SW_RESTORE = 9
+
+    SetWindowPos = _user32.SetWindowPos  # type: ignore[attr-defined]
+    SetWindowPos.argtypes = [
+        wintypes.HWND,
+        wintypes.HWND,
+        wintypes.INT,
+        wintypes.INT,
+        wintypes.INT,
+        wintypes.INT,
+        wintypes.UINT,
+    ]
+    SetWindowPos.restype = wintypes.BOOL
+
+    SetForegroundWindow = _user32.SetForegroundWindow
+    BringWindowToTop = _user32.BringWindowToTop
+    ShowWindow = _user32.ShowWindow
+    EnumWindows = _user32.EnumWindows
+    EnumWindowsProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    IsWindowVisible = _user32.IsWindowVisible
+    GetWindowTextLengthW = _user32.GetWindowTextLengthW
+    GetWindowTextW = _user32.GetWindowTextW
+    GetForegroundWindow = _user32.GetForegroundWindow
+else:
+    ctypes = None  # type: ignore
+    wintypes = None  # type: ignore
+    SetWindowPos = None
+    SetForegroundWindow = None
+    BringWindowToTop = None
+    ShowWindow = None
+    EnumWindows = None
+    EnumWindowsProc = None
+    IsWindowVisible = None
+    GetWindowTextLengthW = None
+    GetWindowTextW = None
+    GetForegroundWindow = None
+
+try:
     import pygetwindow as gw  # type: ignore
 except Exception:
     gw = None
@@ -45,6 +98,371 @@ BRIDGE_ACK = "__MDF_GUI_ACK__"
 BRIDGE_CANCEL = "__MDF_GUI_CANCEL__"
 
 
+class BrowserFocusGuardian:
+    """Mantém o navegador ativo enquanto a GUI permanece visível."""
+
+    def __init__(
+        self,
+        gui_title_supplier,
+        browser_keywords,
+        tab_resolver=None,
+        pause_resolver=None,
+        launcher=None,
+    ):
+        self._gui_title_supplier = gui_title_supplier
+        self._browser_keywords = [kw.lower() for kw in browser_keywords]
+        self._tab_resolver = tab_resolver
+        self._pause_resolver = pause_resolver
+        self._launcher = launcher
+        self._stop_event = threading.Event()
+        self._thread = None
+        self._last_browser_window = None
+        self._lock = threading.Lock()
+        self._last_launch_attempt = 0.0
+        self._console_keywords = [
+            'prompt de comando',
+            'command prompt',
+            'windows powershell',
+            'powershell',
+            'cmd.exe',
+            'python.exe',
+            'py.exe'
+        ]
+
+    def start(self):
+        if gw is None:
+            return
+        if self._thread and self._thread.is_alive():
+            return
+        self._stop_event.clear()
+        self._thread = threading.Thread(target=self._run, name="BrowserFocusGuardian", daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        if self._thread and self._thread.is_alive():
+            self._stop_event.set()
+            self._thread.join(timeout=0.5)
+        self._thread = None
+
+    def force_browser_focus(self):
+        if self._is_paused():
+            return False
+        if gw is None:
+            if self._launch_browser_via_taskbar():
+                time.sleep(0.6)
+            return False
+        success = self._activate_browser_window()
+        if success:
+            return True
+        if self._launch_browser_via_taskbar():
+            time.sleep(0.6)
+            success = self._activate_browser_window()
+        return success
+
+    def remember_browser_window(self, window):
+        if gw is None or window is None:
+            return
+        if self._is_browser_window(window):
+            with self._lock:
+                self._last_browser_window = window
+
+    def _run(self):
+        while not self._stop_event.wait(0.75):
+            if self._is_paused():
+                continue
+            self._guard_focus()
+
+    def _guard_focus(self):
+        if gw is None:
+            return
+        try:
+            active = gw.getActiveWindow()
+        except Exception:
+            active = None
+
+        if self._is_browser_window(active):
+            self.remember_browser_window(active)
+            return
+
+        if self._is_gui_window(active) or self._is_console_window(active):
+            self._activate_browser_window()
+
+    def _activate_browser_window(self):
+        if self._is_paused():
+            return False
+
+        target = None
+        with self._lock:
+            if self._last_browser_window and self._is_browser_window(self._last_browser_window):
+                target = self._last_browser_window
+
+        if target is None:
+            target = self._find_browser_candidate()
+
+        if target is None:
+            if self._activate_via_winapi():
+                self._select_target_tab()
+                return True
+            if self._launch_browser_via_taskbar():
+                time.sleep(0.6)
+            return False
+
+        try:
+            if getattr(target, 'isMinimized', False):
+                target.restore()
+            target.activate()
+            self.remember_browser_window(target)
+            time.sleep(0.12)
+            self._select_target_tab()
+            return True
+        except Exception:
+            if self._activate_via_winapi():
+                self._select_target_tab()
+                return True
+            return False
+
+    def _find_browser_candidate(self):
+        if gw is None:
+            return None
+        try:
+            for window in gw.getAllWindows():
+                if self._is_browser_window(window):
+                    return window
+        except Exception:
+            return None
+        return None
+
+    def _is_browser_window(self, window):
+        if gw is None or window is None:
+            return False
+        try:
+            title = (window.title or '').lower()
+        except Exception:
+            return False
+        if not title:
+            return False
+        return any(keyword in title for keyword in self._browser_keywords)
+
+    def _is_gui_window(self, window):
+        if window is None:
+            return False
+        try:
+            title = (window.title or '').lower()
+        except Exception:
+            return False
+        gui_title = (self._gui_title_supplier() or '').lower()
+        if gui_title and gui_title in title:
+            return True
+        return 'auto mdf invoisys' in title
+
+    def _is_console_window(self, window):
+        if window is None:
+            return False
+        try:
+            title = (window.title or '').lower()
+        except Exception:
+            return False
+        if not title:
+            return False
+        return any(keyword in title for keyword in self._console_keywords)
+
+    def _select_target_tab(self):
+        tab_index = self._resolve_target_tab()
+        if tab_index is None or pyautogui is None:
+            return
+        try:
+            pyautogui.hotkey('ctrl', str(tab_index))
+            time.sleep(0.12)
+        except Exception:
+            pass
+
+    def _resolve_target_tab(self):
+        if self._tab_resolver is None:
+            return None
+        try:
+            value = self._tab_resolver()
+        except Exception:
+            return None
+        try:
+            tab_index = int(value)
+        except (TypeError, ValueError):
+            return None
+        if tab_index <= 0:
+            return None
+        return min(tab_index, 9)
+
+    def _is_paused(self):
+        if self._pause_resolver is None:
+            return False
+        try:
+            return bool(self._pause_resolver())
+        except Exception:
+            return False
+
+    def _activate_via_winapi(self):
+        if ctypes is None or EnumWindows is None or EnumWindowsProc is None:
+            return False
+        if GetWindowTextLengthW is None or GetWindowTextW is None or IsWindowVisible is None:
+            return False
+
+        handles: list[int] = []
+        gui_title = (self._gui_title_supplier() or '').lower()
+
+        def enum_proc(hwnd, _lparam):
+            try:
+                if not IsWindowVisible(hwnd):
+                    return True
+                length = GetWindowTextLengthW(hwnd)
+                if length == 0:
+                    return True
+                buffer = ctypes.create_unicode_buffer(length + 1)
+                GetWindowTextW(hwnd, buffer, length + 1)
+                title = buffer.value.lower()
+            except Exception:
+                return True
+
+            if not title:
+                return True
+            if gui_title and gui_title in title:
+                return True
+            if 'auto mdf invoisys' in title:
+                return True
+            for keyword in self._browser_keywords:
+                if keyword in title:
+                    handles.append(hwnd)
+                    break
+            return True
+
+        try:
+            callback = EnumWindowsProc(enum_proc)
+            EnumWindows(callback, 0)
+        except Exception:
+            return False
+
+        for hwnd in handles:
+            try:
+                if ShowWindow is not None:
+                    ShowWindow(hwnd, SW_RESTORE)
+            except Exception:
+                pass
+            try:
+                if SetForegroundWindow is not None and SetForegroundWindow(hwnd):
+                    time.sleep(0.12)
+                    return True
+            except Exception:
+                pass
+            try:
+                if BringWindowToTop is not None:
+                    BringWindowToTop(hwnd)
+                    time.sleep(0.12)
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def _launch_browser_via_taskbar(self):
+        if self._launcher is None:
+            return False
+        now = time.time()
+        if now - self._last_launch_attempt < 1.5:
+            return False
+        self._last_launch_attempt = now
+        try:
+            return bool(self._launcher())
+        except Exception:
+            return False
+
+
+class WindowVisibilityController:
+    """Mantém a GUI no topo sem roubar o foco do navegador."""
+
+    def __init__(self, root):
+        self.root = root
+        self._mode = 'idle'  # idle, passive, interactive
+        self._user_topmost = False
+        self._current_enable = False
+        self._current_no_activate = False
+        self._is_windows = os.name == 'nt' and SetWindowPos is not None
+        self._hwnd = None
+
+    def set_user_topmost(self, enabled: bool):
+        self._user_topmost = bool(enabled)
+        if self._mode == 'idle':
+            self._apply_topmost(self._user_topmost, no_activate=False, force=True)
+
+    def enter_passive(self):
+        self._mode = 'passive'
+        self._apply_topmost(True, no_activate=True, force=True)
+
+    def enter_interactive(self):
+        self._mode = 'interactive'
+        self._apply_topmost(True, no_activate=False, force=True)
+
+    def release(self):
+        self._mode = 'idle'
+        self._apply_topmost(self._user_topmost, no_activate=False, force=True)
+
+    def maintain(self):
+        if self._mode == 'passive':
+            self._apply_topmost(True, no_activate=True)
+        elif self._mode == 'interactive':
+            self._apply_topmost(True, no_activate=False)
+
+    def invalidate_handle(self):
+        if self._is_windows:
+            self._hwnd = None
+
+    def _apply_topmost(self, enable: bool, *, no_activate: bool = False, force: bool = False):
+        if self._is_windows:
+            hwnd = self._get_hwnd()
+            if not hwnd:
+                return
+            if not force and enable == self._current_enable and no_activate == self._current_no_activate:
+                return
+            flags = SWP_NOSIZE | SWP_NOMOVE | SWP_SHOWWINDOW
+            if no_activate:
+                flags |= SWP_NOACTIVATE
+            try:
+                SetWindowPos(hwnd, HWND_TOPMOST if enable else HWND_NOTOPMOST, 0, 0, 0, 0, flags)
+            except Exception:
+                pass
+            if not enable:
+                try:
+                    self.root.attributes('-topmost', False)
+                except Exception:
+                    pass
+            self._current_no_activate = no_activate if enable else False
+        else:
+            if not force and enable == self._current_enable:
+                return
+            try:
+                self.root.attributes('-topmost', enable)
+            except Exception:
+                pass
+            self._current_no_activate = False
+
+        self._current_enable = enable
+
+        try:
+            if enable:
+                self.root.deiconify()
+                if not no_activate:
+                    self.root.lift()
+        except Exception:
+            pass
+
+    def _get_hwnd(self):
+        if not self._is_windows:
+            return None
+        if self._hwnd:
+            return self._hwnd
+        try:
+            hwnd = self.root.winfo_id()
+        except Exception:
+            hwnd = None
+        if hwnd:
+            self._hwnd = hwnd
+        return self._hwnd
 @dataclass(frozen=True)
 class DependencySpec:
     package: str
@@ -213,10 +631,11 @@ class ScriptExecutor:
     
     MAX_OUTPUT_LINES = 1000  # Limite máximo de linhas para evitar overflow de memória
     
-    def __init__(self, script_path, script_name, execution_id):
+    def __init__(self, script_path, script_name, execution_id, target_tab=0):
         self.script_path = script_path
         self.script_name = script_name
         self.execution_id = execution_id
+        self.target_tab = target_tab
         self.process = None
         self.start_time = None
         self.end_time = None
@@ -244,8 +663,13 @@ class ScriptExecutor:
             env['MDF_BRIDGE_ACK'] = BRIDGE_ACK
             env['MDF_BRIDGE_CANCEL'] = BRIDGE_CANCEL
             env['MDF_PROGRESS_FILE'] = str(self.progress_file)
+            if isinstance(self.target_tab, int) and self.target_tab > 0:
+                env['MDF_BROWSER_TAB'] = str(self.target_tab)
             
             # Iniciar processo de forma completamente isolada
+            creationflags = 0
+            if os.name == 'nt':
+                creationflags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
             self.process = subprocess.Popen(
                 [sys.executable, self.script_path],
                 stdin=subprocess.PIPE,
@@ -255,7 +679,7 @@ class ScriptExecutor:
                 bufsize=1,
                 universal_newlines=True,
                 env=env,
-                creationflags=subprocess.CREATE_NEW_CONSOLE if os.name == 'nt' else 0,
+                creationflags=creationflags,
                 cwd=str(BASE_DIR)
             )
             self.stdin_pipe = self.process.stdin
@@ -737,6 +1161,20 @@ class MDFAutomationGUIv2:
         self.execution_window_state = {'was_iconified': False, 'was_topmost': False}
         self._last_browser_window = None
         self._active_overlay = None
+        self.target_tab_var = tk.IntVar(value=1)
+        self._last_taskbar_activation = 0.0
+        self._taskbar_launch_done = False
+        self._taskbar_launch_attempts = 0
+        self._refocus_job = None
+        self.focus_guardian = BrowserFocusGuardian(
+            lambda: self.root.title(),
+            BROWSER_WINDOW_KEYWORDS,
+            tab_resolver=self._get_focus_guardian_tab,
+            pause_resolver=self._is_overlay_active,
+            launcher=self._launch_browser_via_taskbar
+        )
+        self._visibility_controller = WindowVisibilityController(self.root)
+        self._visibility_job = None
         
         # Inicializar verificador de dependências (sem verificação obrigatória)
         self.dependency_checker = DependencyChecker()
@@ -753,12 +1191,23 @@ class MDFAutomationGUIv2:
         # Criar interface
         self.create_widgets()
         self.load_scripts()
+
+        # Respeitar configuração inicial de topmost do usuário
+        try:
+            self.root.update_idletasks()
+        except Exception:
+            pass
+        self._visibility_controller.set_user_topmost(self.topmost_var.get())
         
         # Iniciar thread de atualização
         self.start_update_loop()
         
         # Handler para fechar a janela
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        self.root.bind('<Unmap>', self._handle_visibility_event, add='+')
+        self.root.bind('<Map>', self._handle_visibility_event, add='+')
+        self.root.bind('<FocusIn>', self._handle_root_focus_in, add='+')
+        self.root.bind('<ButtonRelease-1>', self._handle_root_pointer_release, add='+')
     
     def _setup_styles(self):
         """Configura estilos da interface"""
@@ -775,7 +1224,10 @@ class MDFAutomationGUIv2:
     
     def _toggle_topmost(self):
         """Alterna o estado 'sempre no topo' da janela principal"""
-        self.root.attributes("-topmost", self.topmost_var.get())
+        if hasattr(self, '_visibility_controller'):
+            self._visibility_controller.set_user_topmost(self.topmost_var.get())
+        else:
+            self.root.attributes("-topmost", self.topmost_var.get())
 
     def create_widgets(self):
         """Cria todos os widgets da interface"""
@@ -832,6 +1284,32 @@ class MDFAutomationGUIv2:
         self.script_var = tk.StringVar()
         self.script_combo = ttk.Combobox(select_frame, textvariable=self.script_var, state='readonly', width=60)
         self.script_combo.pack(fill=tk.X, pady=(0, 10))
+
+        tab_select_frame = ttk.Frame(select_frame)
+        tab_select_frame.pack(fill=tk.X, pady=(0, 10))
+
+        ttk.Label(
+            tab_select_frame,
+            text="Aba do navegador alvo (0 = manter atual):"
+        ).pack(side=tk.LEFT)
+
+        try:
+            spinbox = ttk.Spinbox(
+                tab_select_frame,
+                from_=0,
+                to=9,
+                textvariable=self.target_tab_var,
+                width=4
+            )
+        except Exception:
+            spinbox = tk.Spinbox(
+                tab_select_frame,
+                from_=0,
+                to=9,
+                textvariable=self.target_tab_var,
+                width=4
+            )
+        spinbox.pack(side=tk.LEFT, padx=(8, 0))
         
         # Botões de controle
         button_frame = ttk.Frame(select_frame)
@@ -978,6 +1456,280 @@ class MDFAutomationGUIv2:
             self.script_combo.current(0)
 
         self.info_label.config(text=f"Scripts encontrados: {len(self.scripts)} em {str(current_dir)}")
+
+    def _handle_visibility_event(self, event=None):
+        if (
+            self.current_execution
+            and self.current_execution.is_running
+            and self.root.state() in ('iconic', 'iconified', 'withdrawn')
+        ):
+            self.root.after(150, self._restore_gui_visibility)
+
+    def _restore_gui_visibility(self):
+        if not self.root.winfo_exists():
+            return
+        if (
+            self.current_execution
+            and self.current_execution.is_running
+            and self.root.state() in ('iconic', 'iconified', 'withdrawn')
+        ):
+            self.root.deiconify()
+            if hasattr(self, '_visibility_controller'):
+                self._visibility_controller.maintain()
+            else:
+                self.root.lift()
+            if hasattr(self, 'focus_guardian') and self.focus_guardian:
+                self.focus_guardian.force_browser_focus()
+            if self._visibility_job is None:
+                self._visibility_job = self.root.after(600, self._visibility_guard_loop)
+
+    def _start_visibility_guard(self):
+        self._stop_visibility_guard()
+        self._visibility_guard_loop()
+
+    def _stop_visibility_guard(self):
+        if self._visibility_job is not None:
+            try:
+                self.root.after_cancel(self._visibility_job)
+            except Exception:
+                pass
+            self._visibility_job = None
+
+    def _visibility_guard_loop(self):
+        self._visibility_job = None
+        if not self.root.winfo_exists():
+            return
+        if self.current_execution:
+            if self.current_execution.is_running:
+                state = self.root.state()
+                if state in ('iconic', 'iconified', 'withdrawn'):
+                    self.root.deiconify()
+                    if hasattr(self, '_visibility_controller'):
+                        self._visibility_controller.maintain()
+                    else:
+                        self.root.after(50, self.root.lift)
+                elif hasattr(self, '_visibility_controller'):
+                    self._visibility_controller.maintain()
+                if hasattr(self, 'focus_guardian') and self.focus_guardian:
+                    self.focus_guardian.force_browser_focus()
+            self._visibility_job = self.root.after(600, self._visibility_guard_loop)
+
+    def _resolve_target_tab_value(self):
+        try:
+            value = int(self.target_tab_var.get())
+        except Exception:
+            value = 0
+        if value < 0:
+            value = 0
+        if value > 9:
+            value = 9
+        return value
+
+    def _get_focus_guardian_tab(self):
+        value = self._resolve_target_tab_value()
+        return value if value > 0 else None
+
+    def _switch_to_target_tab(self):
+        tab_index = self._get_focus_guardian_tab()
+        if tab_index is None or pyautogui is None:
+            return
+        key = str(tab_index)
+        key_down = False
+        try:
+            pyautogui.keyDown('ctrl')
+            key_down = True
+            pyautogui.press(key)
+        except Exception:
+            pass
+        finally:
+            if key_down:
+                try:
+                    pyautogui.keyUp('ctrl')
+                except Exception:
+                    pass
+        time.sleep(0.12)
+
+    def _mark_browser_focus_acquired(self):
+        self._taskbar_launch_done = True
+
+    def _is_browser_title(self, title):
+        if not title:
+            return False
+        lower = title.lower()
+        gui_title = (self.root.title() or '').lower()
+        if gui_title and gui_title in lower:
+            return False
+        if 'auto mdf invoisys' in lower:
+            return False
+        return any(keyword in lower for keyword in BROWSER_WINDOW_KEYWORDS)
+
+    def _is_browser_foreground(self):
+        if ctypes is None or GetForegroundWindow is None:
+            return False
+        if GetWindowTextLengthW is None or GetWindowTextW is None:
+            return False
+        try:
+            hwnd = GetForegroundWindow()
+        except Exception:
+            return False
+        if not hwnd:
+            return False
+        try:
+            length = GetWindowTextLengthW(hwnd)
+        except Exception:
+            return False
+        if length <= 0:
+            return False
+        buffer = ctypes.create_unicode_buffer(length + 1)
+        try:
+            GetWindowTextW(hwnd, buffer, length + 1)
+        except Exception:
+            return False
+        return self._is_browser_title(buffer.value)
+
+    def _activate_browser_via_winapi(self):
+        if ctypes is None or EnumWindows is None or EnumWindowsProc is None:
+            return False
+        if IsWindowVisible is None or GetWindowTextLengthW is None or GetWindowTextW is None:
+            return False
+
+        handles: list[int] = []
+        gui_title = (self.root.title() or '').lower()
+
+        def enum_proc(hwnd, _lparam):
+            try:
+                if not IsWindowVisible(hwnd):
+                    return True
+                length = GetWindowTextLengthW(hwnd)
+                if length == 0:
+                    return True
+                buffer = ctypes.create_unicode_buffer(length + 1)
+                GetWindowTextW(hwnd, buffer, length + 1)
+                title = buffer.value
+            except Exception:
+                return True
+
+            if not title:
+                return True
+            lower = title.lower()
+            if gui_title and gui_title in lower:
+                return True
+            if 'auto mdf invoisys' in lower:
+                return True
+            for keyword in BROWSER_WINDOW_KEYWORDS:
+                if keyword in lower:
+                    handles.append(hwnd)
+                    break
+            return True
+
+        try:
+            callback = EnumWindowsProc(enum_proc)
+            EnumWindows(callback, 0)
+        except Exception:
+            return False
+
+        for hwnd in handles:
+            try:
+                if ShowWindow is not None:
+                    ShowWindow(hwnd, SW_RESTORE)
+            except Exception:
+                pass
+            try:
+                if SetForegroundWindow is not None and SetForegroundWindow(hwnd):
+                    time.sleep(0.12)
+                    self._mark_browser_focus_acquired()
+                    return True
+            except Exception:
+                pass
+            try:
+                if BringWindowToTop is not None:
+                    BringWindowToTop(hwnd)
+                    time.sleep(0.12)
+                    self._mark_browser_focus_acquired()
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def _launch_browser_via_taskbar(self):
+        if pyautogui is None:
+            return False
+        if self._taskbar_launch_done:
+            return False
+        if self._taskbar_launch_attempts >= 1:
+            return False
+        now = time.time()
+        if now - self._last_taskbar_activation < 1.5:
+            return False
+        self._last_taskbar_activation = now
+        self._taskbar_launch_attempts += 1
+        try:
+            pyautogui.hotkey('win', '1')
+            time.sleep(0.5)
+            return True
+        except Exception:
+            return False
+
+    def _is_overlay_active(self):
+        overlay = getattr(self, '_active_overlay', None)
+        return bool(overlay and overlay.winfo_exists())
+
+    def _handle_root_focus_in(self, event=None):
+        if self._is_overlay_active():
+            return
+        if not (self.current_execution and self.current_execution.is_running):
+            return
+        self._schedule_browser_refocus()
+
+    def _handle_root_pointer_release(self, event=None):
+        if self._is_overlay_active():
+            return
+        if not (self.current_execution and self.current_execution.is_running):
+            return
+        self._schedule_browser_refocus()
+
+    def _schedule_browser_refocus(self, delay=0):
+        if not self.root.winfo_exists():
+            return
+        if self._refocus_job is not None:
+            try:
+                self.root.after_cancel(self._refocus_job)
+            except Exception:
+                pass
+            self._refocus_job = None
+
+        def callback():
+            self._refocus_job = None
+            self._redirect_focus_to_browser()
+
+        if delay and delay > 0:
+            self._refocus_job = self.root.after(delay, callback)
+        else:
+            self._refocus_job = self.root.after_idle(callback)
+
+    def _redirect_focus_to_browser(self):
+        if not self.root.winfo_exists():
+            return
+        if self._is_overlay_active():
+            return
+        if not (self.current_execution and self.current_execution.is_running):
+            return
+        focus_acquired = False
+
+        if hasattr(self, 'focus_guardian') and self.focus_guardian:
+            try:
+                focus_acquired = bool(self.focus_guardian.force_browser_focus())
+            except Exception:
+                focus_acquired = False
+
+        if not focus_acquired:
+            focus_acquired = bool(self._restore_external_focus())
+
+        if hasattr(self, '_visibility_controller'):
+            self._visibility_controller.enter_passive()
+
+        if not focus_acquired:
+            self._schedule_browser_refocus(delay=200)
     
     def start_new_execution(self):
         """Inicia uma nova execução de script"""
@@ -1035,10 +1787,15 @@ class MDFAutomationGUIv2:
             messagebox.showerror("Erro", f"Script não encontrado: {script_path}")
             return
         
+        # Resolver aba alvo do navegador (0 = manter atual)
+        target_tab_value = self._resolve_target_tab_value()
+        self._taskbar_launch_done = False
+        self._taskbar_launch_attempts = 0
+
         # Criar executor
         execution_id = f"{script_name}_{int(time.time())}"
         
-        executor = ScriptExecutor(script_path, script_name, execution_id)
+        executor = ScriptExecutor(script_path, script_name, execution_id, target_tab=target_tab_value)
         self.current_execution = executor
 
         # Reorganizar janelas: manter GUI acessível sem roubar foco do navegador
@@ -1053,24 +1810,41 @@ class MDFAutomationGUIv2:
 
         self.root.update_idletasks()
 
-        if self.topmost_var.get():
-            self.topmost_var.set(False)
-            self._toggle_topmost()
-        else:
-            self.root.attributes('-topmost', False)
-
         if hasattr(self, 'topmost_checkbox'):
             self.topmost_checkbox.state(['disabled'])
 
+        if hasattr(self, '_visibility_controller'):
+            self._visibility_controller.set_user_topmost(previous_state['was_topmost'])
+            self._visibility_controller.enter_passive()
+
+        self.topmost_var.set(True)
+
+        if hasattr(self, 'focus_guardian') and self.focus_guardian:
+            self.focus_guardian.start()
+
+        self._start_visibility_guard()
+        self._launch_browser_via_taskbar()
+
         if gw is not None:
             self.root.after(250, self._restore_external_focus)
-            window_event_message = (
-                "🪟 Janela principal mantida visível em segundo plano. Foco redirecionado ao navegador."
-            )
+            if target_tab_value > 0:
+                window_event_message = (
+                    f"🪟 Janela principal mantida visível sem capturar foco. Navegador direcionado para a aba {target_tab_value}."
+                )
+            else:
+                window_event_message = (
+                    "🪟 Janela principal mantida visível sem capturar foco. Navegador continua na aba atual."
+                )
         else:
-            window_event_message = (
-                "🪟 Janela principal mantida visível em segundo plano. Instale 'pygetwindow' para redirecionar o foco do navegador automaticamente."
-            )
+            self.root.after(250, self._restore_external_focus)
+            if target_tab_value > 0:
+                window_event_message = (
+                    f"🪟 Janela principal mantida visível. Instale 'pygetwindow' para direcionar automaticamente a aba {target_tab_value}."
+                )
+            else:
+                window_event_message = (
+                    "🪟 Janela principal mantida visível. Instale 'pygetwindow' para redirecionar o foco do navegador automaticamente."
+                )
         
         # Iniciar execução em thread
         threading.Thread(
@@ -1413,17 +2187,23 @@ class MDFAutomationGUIv2:
                 self.current_execution = None
                 state_snapshot = getattr(self, 'execution_window_state', {'was_iconified': False, 'was_topmost': False})
 
+                self._stop_visibility_guard()
+                if hasattr(self, 'focus_guardian') and self.focus_guardian:
+                    self.focus_guardian.stop()
+
                 if state_snapshot.get('was_iconified'):
                     self.root.iconify()
                 else:
                     self.root.deiconify()
                     self.root.lift()
 
-                self.topmost_var.set(state_snapshot.get('was_topmost', False))
-                self._toggle_topmost()
-                if not state_snapshot.get('was_topmost', False):
-                    # Garantir que não fique preso em topmost ao restaurar
-                    self.root.attributes('-topmost', False)
+                was_topmost = state_snapshot.get('was_topmost', False)
+                self.topmost_var.set(was_topmost)
+                if hasattr(self, '_visibility_controller'):
+                    self._visibility_controller.set_user_topmost(was_topmost)
+                    self._visibility_controller.release()
+                else:
+                    self.root.attributes('-topmost', was_topmost)
 
                 if hasattr(self, 'topmost_checkbox'):
                     self.topmost_checkbox.state(['!disabled'])
@@ -1522,6 +2302,12 @@ class MDFAutomationGUIv2:
 
         overlay.focus_set()
         self._active_overlay = overlay
+        if (
+            hasattr(self, '_visibility_controller')
+            and self.current_execution
+            and self.current_execution.is_running
+        ):
+            self._visibility_controller.enter_interactive()
         return overlay, container
 
     def _destroy_overlay(self):
@@ -1531,6 +2317,12 @@ class MDFAutomationGUIv2:
             except Exception:
                 pass
         self._active_overlay = None
+        if (
+            hasattr(self, '_visibility_controller')
+            and self.current_execution
+            and self.current_execution.is_running
+        ):
+            self._visibility_controller.enter_passive()
 
     def _show_custom_confirm(self, title, message, buttons, parent=None):
         """Exibe diálogo de confirmação integrado na própria GUI"""
@@ -1677,12 +2469,35 @@ class MDFAutomationGUIv2:
                 window.restore()
             window.activate()
             self._last_browser_window = window
+            if hasattr(self, 'focus_guardian') and self.focus_guardian:
+                self.focus_guardian.remember_browser_window(window)
+            time.sleep(0.12)
+            self._mark_browser_focus_acquired()
             return True
         except Exception:
             return False
 
     def _focus_browser_window(self, retry=True):
+        if self._is_browser_foreground():
+            self._mark_browser_focus_acquired()
+            self._switch_to_target_tab()
+            return True
+
+        if hasattr(self, 'focus_guardian') and self.focus_guardian:
+            if self.focus_guardian.force_browser_focus():
+                self._mark_browser_focus_acquired()
+                self._switch_to_target_tab()
+                return True
+
         if gw is None:
+            if self._activate_browser_via_winapi():
+                self._switch_to_target_tab()
+                return True
+            if retry and not self._taskbar_launch_done and self._launch_browser_via_taskbar():
+                self.root.after(900, lambda: self._focus_browser_window(retry=False))
+                return False
+            if retry:
+                self.root.after(600, lambda: self._focus_browser_window(retry=False))
             return False
 
         candidates = []
@@ -1706,14 +2521,23 @@ class MDFAutomationGUIv2:
 
         for window in candidates:
             if self._activate_external_window(window):
+                self._switch_to_target_tab()
                 return True
+
+        if self._activate_browser_via_winapi():
+            self._switch_to_target_tab()
+            return True
+
+        if retry and not self._taskbar_launch_done and self._launch_browser_via_taskbar():
+            self.root.after(900, lambda: self._focus_browser_window(retry=False))
+            return False
 
         if retry:
             self.root.after(600, lambda: self._focus_browser_window(retry=False))
         return False
 
     def _restore_external_focus(self):
-        self._focus_browser_window()
+        return self._focus_browser_window()
 
     def _dialog_parent(self):
         return self.root
@@ -1727,6 +2551,12 @@ class MDFAutomationGUIv2:
                 self.root.deiconify()
                 self.root.update_idletasks()
             self.root.lift()
+            if (
+                hasattr(self, '_visibility_controller')
+                and self.current_execution
+                and self.current_execution.is_running
+            ):
+                self._visibility_controller.enter_interactive()
         except Exception:
             pass
         return was_iconified
@@ -1737,6 +2567,12 @@ class MDFAutomationGUIv2:
                 self.root.iconify()
         except Exception:
             pass
+        if (
+            hasattr(self, '_visibility_controller')
+            and self.current_execution
+            and self.current_execution.is_running
+        ):
+            self._visibility_controller.enter_passive()
         if gw is not None:
             self.root.after(250, self._restore_external_focus)
 
@@ -1904,6 +2740,12 @@ class MDFAutomationGUIv2:
             # Parar execução se estiver rodando
             if self.current_execution and self.current_execution.is_running:
                 self.current_execution.stop()
+
+            self._stop_visibility_guard()
+            if hasattr(self, 'focus_guardian') and self.focus_guardian:
+                self.focus_guardian.stop()
+            if hasattr(self, '_visibility_controller'):
+                self._visibility_controller.release()
             
             self.root.destroy()
 

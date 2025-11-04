@@ -2,6 +2,7 @@
 import pyautogui
 import time
 import ctypes
+from ctypes import wintypes
 import os
 import pyperclip
 import re
@@ -27,6 +28,79 @@ BROWSER_WINDOW_KEYWORDS = ['Google Chrome', 'Microsoft Edge', 'Mozilla Firefox',
 LAST_BROWSER_WINDOW = None
 
 
+def _resolve_target_tab():
+    raw = os.environ.get('MDF_BROWSER_TAB', '').strip()
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    if value <= 0:
+        return None
+    if value > 9:
+        value = 9
+    return value
+
+
+TARGET_TAB = _resolve_target_tab()
+_LAST_TASKBAR_LAUNCH = 0.0
+_TASKBAR_LAUNCHED = False
+_TASKBAR_LAUNCH_ATTEMPTS = 0
+
+
+if os.name == 'nt':
+    _user32 = ctypes.windll.user32  # type: ignore[assignment]
+    _EnumWindowsProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    _EnumWindows = _user32.EnumWindows
+    _EnumWindows.argtypes = [_EnumWindowsProc, wintypes.LPARAM]
+    _EnumWindows.restype = wintypes.BOOL
+    _IsWindowVisible = _user32.IsWindowVisible
+    _GetWindowTextLengthW = _user32.GetWindowTextLengthW
+    _GetWindowTextW = _user32.GetWindowTextW
+    _SetForegroundWindow = _user32.SetForegroundWindow
+    _ShowWindow = _user32.ShowWindow
+    _BringWindowToTop = _user32.BringWindowToTop
+    _SW_RESTORE = 9
+else:
+    _EnumWindowsProc = None
+    _EnumWindows = None
+    _IsWindowVisible = None
+    _GetWindowTextLengthW = None
+    _GetWindowTextW = None
+    _SetForegroundWindow = None
+    _ShowWindow = None
+    _BringWindowToTop = None
+    _SW_RESTORE = 9
+
+
+def _switch_to_target_tab():
+    if TARGET_TAB is None:
+        return
+    try:
+        pyautogui.hotkey('ctrl', str(TARGET_TAB))
+        time.sleep(0.15)
+    except Exception:
+        pass
+
+
+def _launch_browser_via_taskbar():
+    global _LAST_TASKBAR_LAUNCH, _TASKBAR_LAUNCHED, _TASKBAR_LAUNCH_ATTEMPTS
+    if _TASKBAR_LAUNCHED:
+        return False
+    if _TASKBAR_LAUNCH_ATTEMPTS >= 1:
+        return False
+    now = time.time()
+    if now - _LAST_TASKBAR_LAUNCH < 1.5:
+        return False
+    _LAST_TASKBAR_LAUNCH = now
+    _TASKBAR_LAUNCH_ATTEMPTS += 1
+    try:
+        pyautogui.hotkey('win', '1')
+        time.sleep(0.6)
+        return True
+    except Exception:
+        return False
+
+
 def _is_browser_window(window):
     try:
         title = getattr(window, 'title', '') or ''
@@ -40,8 +114,8 @@ def _is_browser_window(window):
 
 
 def _activate_browser_window():
-    """Traz uma janela de navegador para o foco e seleciona a primeira aba."""
-    global LAST_BROWSER_WINDOW
+    """Traz uma janela de navegador para o foco e reforça a aba configurada."""
+    global LAST_BROWSER_WINDOW, _TASKBAR_LAUNCHED
 
     if gw:
         candidates = []
@@ -72,38 +146,107 @@ def _activate_browser_window():
                     window.restore()
                 window.activate()
                 LAST_BROWSER_WINDOW = window
+                _TASKBAR_LAUNCHED = True
                 time.sleep(0.25)
-                pyautogui.hotkey('ctrl', '1')
-                time.sleep(0.15)
+                _switch_to_target_tab()
                 return True
             except Exception:
                 continue
 
-    # Sem pygetwindow ou sem candidatos: apenas reforça a aba atual
-    pyautogui.hotkey('ctrl', '1')
-    time.sleep(0.15)
+    if _activate_via_winapi():
+        _TASKBAR_LAUNCHED = True
+        _switch_to_target_tab()
+        return True
+
+    if _launch_browser_via_taskbar():
+        if _activate_via_winapi():
+            _switch_to_target_tab()
+            return True
+
+    return False
+
+
+def _activate_via_winapi():
+    if _EnumWindows is None or _EnumWindowsProc is None:
+        return False
+    if _IsWindowVisible is None or _GetWindowTextLengthW is None or _GetWindowTextW is None:
+        return False
+
+    handles: list[int] = []
+    gui_keywords = [kw.lower() for kw in GUI_WINDOW_KEYWORDS]
+    browser_keywords = [kw.lower() for kw in BROWSER_WINDOW_KEYWORDS]
+
+    def enum_proc(hwnd, _lparam):
+        try:
+            if not _IsWindowVisible(hwnd):
+                return True
+            length = _GetWindowTextLengthW(hwnd)
+            if length == 0:
+                return True
+            buffer = ctypes.create_unicode_buffer(length + 1)
+            _GetWindowTextW(hwnd, buffer, length + 1)
+            title = buffer.value.lower()
+        except Exception:
+            return True
+
+        if not title:
+            return True
+        for keyword in gui_keywords:
+            if keyword in title:
+                return True
+        for keyword in browser_keywords:
+            if keyword in title:
+                handles.append(hwnd)
+                break
+        return True
+
+    try:
+        callback = _EnumWindowsProc(enum_proc)
+        _EnumWindows(callback, 0)
+    except Exception:
+        return False
+
+    for hwnd in handles:
+        try:
+            if _ShowWindow is not None:
+                _ShowWindow(hwnd, _SW_RESTORE)
+        except Exception:
+            pass
+        try:
+            if _SetForegroundWindow is not None and _SetForegroundWindow(hwnd):
+                return True
+        except Exception:
+            try:
+                if _BringWindowToTop is not None:
+                    _BringWindowToTop(hwnd)
+                    return True
+            except Exception:
+                continue
     return False
 
 
 def ensure_browser_focus():
     """Garante que o navegador continue em foco, evitando a GUI principal."""
-    global LAST_BROWSER_WINDOW
+    global LAST_BROWSER_WINDOW, _TASKBAR_LAUNCHED
     if gw:
         try:
             active = gw.getActiveWindow()
             if active:
                 title = getattr(active, 'title', '') or ''
                 if _is_browser_window(active):
-                    # Guardar referência e apenas reforçar a primeira aba
                     LAST_BROWSER_WINDOW = active
-                    pyautogui.hotkey('ctrl', '1')
-                    time.sleep(0.15)
+                    _TASKBAR_LAUNCHED = True
+                    _switch_to_target_tab()
                     return
                 if any(keyword in title for keyword in GUI_WINDOW_KEYWORDS):
                     _activate_browser_window()
                     return
         except Exception:
             pass
+
+    if _launch_browser_via_taskbar():
+        _activate_browser_window()
+        return
 
     _activate_browser_window()
 
@@ -163,7 +306,6 @@ def prompt_topmost(*args, **kwargs):
     if handled:
         ensure_browser_focus()
         return response
-
     root = tk.Tk()
     root.withdraw()
     root.attributes('-topmost', True)
@@ -296,7 +438,9 @@ pyautogui.FAILSAFE = True  # Pausa de emergência movendo o mouse para o canto s
 #---------------------------------------------------------------
 # ABRIR NAVEGADOR
 time.sleep(1)
-pyautogui.hotkey('winleft', '1')
+_launch_browser_via_taskbar()
+time.sleep(0.6)
+_activate_browser_window()
 time.sleep(1)
 #---------------------------------------------------------------
 
