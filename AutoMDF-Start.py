@@ -11,7 +11,7 @@ Versão v0.5.0-Alpha-GUI:
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext
+from tkinter import ttk, messagebox, scrolledtext, simpledialog
 import threading
 import os
 import sys
@@ -25,6 +25,9 @@ from progress_manager import ProgressManager
 import importlib.util
 
 BASE_DIR = Path(__file__).resolve().parent
+BRIDGE_PREFIX = "__MDF_GUI_BRIDGE__"
+BRIDGE_ACK = "__MDF_GUI_ACK__"
+BRIDGE_CANCEL = "__MDF_GUI_CANCEL__"
 
 
 class DependencyChecker:
@@ -141,6 +144,7 @@ class ScriptExecutor:
         self.monitoring_thread = None
         self.is_running = False
         self.update_queue = queue.Queue()  # Fila thread-safe para comunicação
+        self.stdin_pipe = None
     
     def start(self):
         """Inicia a execução do script"""
@@ -153,10 +157,15 @@ class ScriptExecutor:
             # Criar variável de ambiente com o ID de execução
             env = os.environ.copy()
             env['MDF_EXECUTION_ID'] = self.execution_id
+            env['MDF_BRIDGE_ACTIVE'] = '1'
+            env['MDF_BRIDGE_PREFIX'] = BRIDGE_PREFIX
+            env['MDF_BRIDGE_ACK'] = BRIDGE_ACK
+            env['MDF_BRIDGE_CANCEL'] = BRIDGE_CANCEL
             
             # Iniciar processo de forma completamente isolada
             self.process = subprocess.Popen(
                 [sys.executable, self.script_path],
+                stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -166,6 +175,7 @@ class ScriptExecutor:
                 creationflags=subprocess.CREATE_NEW_CONSOLE if os.name == 'nt' else 0,
                 cwd=str(BASE_DIR)
             )
+            self.stdin_pipe = self.process.stdin
             
             # Iniciar thread de monitoramento
             self.monitoring_thread = threading.Thread(
@@ -188,17 +198,23 @@ class ScriptExecutor:
             for line in self.process.stdout:
                 if line:
                     line_stripped = line.rstrip()
+
+                    if line_stripped.startswith(BRIDGE_PREFIX):
+                        try:
+                            payload_raw = line_stripped[len(BRIDGE_PREFIX):]
+                            payload = json.loads(payload_raw)
+                            self.update_queue.put(('dialog', payload), block=False)
+                        except Exception:
+                            self.output_lines.append(line_stripped)
+                        continue
+
                     self.output_lines.append(line_stripped)
                     
                     # Limitar memória: manter apenas últimas MAX_OUTPUT_LINES linhas
                     if len(self.output_lines) > self.MAX_OUTPUT_LINES:
                         self.output_lines = self.output_lines[-self.MAX_OUTPUT_LINES:]
                     
-                    # Notificar via queue thread-safe
-                    try:
-                        self.update_queue.put(('line', line_stripped), block=False)
-                    except queue.Full:
-                        pass  # Se fila estiver cheia, ignora
+                    # Eventos de linha não são necessários para a UI
             
             # Aguardar processo terminar
             self.process.wait()
@@ -258,6 +274,19 @@ class ScriptExecutor:
             self.output_lines.append("⏹ Script parado pelo usuário")
             self.update_queue.put(('status', 'stopped'), block=False)
     
+    def send_bridge_response(self, message):
+        """Envia resposta para o script via stdin"""
+        if not self.stdin_pipe or self.stdin_pipe.closed:
+            return
+
+        try:
+            if message is None:
+                message = BRIDGE_CANCEL
+            self.stdin_pipe.write(f"{message}\n")
+            self.stdin_pipe.flush()
+        except Exception:
+            pass
+
     def cleanup(self):
         """Limpa recursos e memória ao finalizar"""
         # Limpar output para liberar memória
@@ -271,6 +300,13 @@ class ScriptExecutor:
                 os.remove(self.progress_file)
             except:
                 pass
+
+        if self.stdin_pipe and not self.stdin_pipe.closed:
+            try:
+                self.stdin_pipe.close()
+            except:
+                pass
+        self.stdin_pipe = None
     
     def get_elapsed_time(self):
         """Retorna tempo decorrido em formato HH:MM:SS"""
@@ -1068,6 +1104,7 @@ class MDFAutomationGUIv2:
         if self.current_execution and hasattr(self, 'execution_widgets') and self.execution_widgets:
             executor = self.current_execution
             widgets = self.execution_widgets
+            self._process_executor_events(executor)
             
             # Atualizar status
             if executor.status == "running":
@@ -1193,6 +1230,104 @@ class MDFAutomationGUIv2:
         
         # Atualizar stats
         self._update_stats()
+
+    def _process_executor_events(self, executor):
+        """Processa eventos enviados pelo executor (ex: prompts)"""
+        if not executor:
+            return
+
+        while True:
+            try:
+                event_type, payload = executor.update_queue.get_nowait()
+            except queue.Empty:
+                break
+
+            if event_type == 'dialog':
+                self._handle_dialog_event(executor, payload)
+            else:
+                # Eventos de status já são tratados no fluxo principal
+                continue
+
+    def _handle_dialog_event(self, executor, payload):
+        """Mostra diálogos solicitados pelo script dentro da GUI"""
+        dialog_type = payload.get('type')
+        title = payload.get('title') or "Auto MDF InvoISys"
+        message = payload.get('text') or ""
+
+        if dialog_type == 'alert':
+            self._append_log_message(f"🔔 Alerta do script: {message}", 'info')
+            messagebox.showinfo(title, message, parent=self.root)
+            executor.send_bridge_response(BRIDGE_ACK)
+            return
+
+        if dialog_type == 'prompt':
+            self._append_log_message(f"📝 Entrada solicitada: {message}", 'info')
+            default = payload.get('default', '')
+            response = simpledialog.askstring(title, message, parent=self.root, initialvalue=default)
+            if response is None:
+                executor.send_bridge_response(BRIDGE_CANCEL)
+            else:
+                executor.send_bridge_response(response)
+            return
+
+        if dialog_type == 'confirm':
+            self._append_log_message(f"❓ Confirmação solicitada: {message}", 'info')
+            buttons = payload.get('buttons') or ['OK', 'Cancel']
+            choice = self._show_custom_confirm(title, message, buttons)
+            if choice is None:
+                executor.send_bridge_response(BRIDGE_CANCEL)
+            else:
+                executor.send_bridge_response(choice)
+            return
+
+        # Caso não reconheça, apenas confirma para evitar travar o script
+        executor.send_bridge_response(BRIDGE_ACK)
+
+    def _show_custom_confirm(self, title, message, buttons):
+        """Exibe diálogo de confirmação com botões personalizados"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title(title)
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.attributes('-topmost', True)
+        dialog.resizable(False, False)
+
+        result = {'value': None}
+
+        def on_select(value):
+            result['value'] = value
+            dialog.destroy()
+
+        def on_close():
+            result['value'] = None
+            dialog.destroy()
+
+        dialog.protocol('WM_DELETE_WINDOW', on_close)
+
+        label = ttk.Label(dialog, text=message, justify=tk.LEFT, wraplength=440)
+        label.pack(padx=24, pady=(20, 12))
+
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(padx=24, pady=(0, 20), fill=tk.X)
+
+        for idx, button_text in enumerate(buttons):
+            btn = ttk.Button(button_frame, text=button_text, command=lambda val=button_text: on_select(val))
+            btn.grid(row=idx // 3, column=idx % 3, padx=4, pady=4, sticky='ew')
+
+        for col in range(min(3, len(buttons))):
+            button_frame.grid_columnconfigure(col, weight=1)
+
+        dialog.update_idletasks()
+        width = dialog.winfo_width()
+        height = dialog.winfo_height()
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (width // 2)
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (height // 2)
+        dialog.geometry(f"{width}x{height}+{x}+{y}")
+
+        dialog.focus_force()
+        dialog.wait_window()
+
+        return result['value']
     
     def _update_stats(self):
         """Atualiza estatísticas"""

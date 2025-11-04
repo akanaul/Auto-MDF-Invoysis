@@ -5,9 +5,37 @@ import ctypes
 import os
 import pyperclip
 import re
+import json
+import sys
 from pathlib import Path
 import tkinter as tk
 from tkinter import simpledialog, messagebox
+
+
+BRIDGE_ACTIVE = os.environ.get('MDF_BRIDGE_ACTIVE') == '1'
+BRIDGE_PREFIX = os.environ.get('MDF_BRIDGE_PREFIX', '__MDF_GUI_BRIDGE__')
+BRIDGE_ACK = os.environ.get('MDF_BRIDGE_ACK', '__MDF_GUI_ACK__')
+BRIDGE_CANCEL = os.environ.get('MDF_BRIDGE_CANCEL', '__MDF_GUI_CANCEL__')
+
+
+def _bridge_request(payload):
+    if not BRIDGE_ACTIVE:
+        return None, False
+
+    try:
+        message = BRIDGE_PREFIX + json.dumps(payload, ensure_ascii=False)
+        print(message, flush=True)
+        response = sys.stdin.readline()
+        if response is None or response == '':
+            return None, True
+        response = response.rstrip('\n')
+        if response == BRIDGE_CANCEL:
+            return None, True
+        if response == BRIDGE_ACK:
+            return '', True
+        return response, True
+    except Exception:
+        return None, False
 
 
 def _parse_text_title_defaults(args, kwargs, default_title):
@@ -36,6 +64,15 @@ def prompt_topmost(*args, **kwargs):
     """Exibe um prompt que permanece acima de todas as janelas."""
     text, title, default_value = _parse_text_title_defaults(args, kwargs, 'Entrada')
 
+    response, handled = _bridge_request({
+        'type': 'prompt',
+        'text': text or '',
+        'title': title or 'Entrada',
+        'default': default_value or ''
+    })
+    if handled:
+        return response
+
     root = tk.Tk()
     root.withdraw()
     root.attributes('-topmost', True)
@@ -52,6 +89,14 @@ def prompt_topmost(*args, **kwargs):
 def alert_topmost(*args, **kwargs):
     """Exibe um alerta informativo em primeiro plano."""
     text, title, _ = _parse_text_title_defaults(args, kwargs, 'Informação')
+
+    _, handled = _bridge_request({
+        'type': 'alert',
+        'text': text or '',
+        'title': title or 'Informação'
+    })
+    if handled:
+        return 'OK'
 
     root = tk.Tk()
     root.withdraw()
@@ -75,6 +120,15 @@ def confirm_topmost(*args, **kwargs):
 
     if not buttons:
         buttons = ['OK']
+
+    response, handled = _bridge_request({
+        'type': 'confirm',
+        'text': text or '',
+        'title': title or 'Confirmação',
+        'buttons': buttons
+    })
+    if handled:
+        return response if response is not None else ('Cancel' if 'Cancel' in buttons else buttons[-1])
 
     root = tk.Tk()
     root.withdraw()
