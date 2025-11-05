@@ -1,322 +1,81 @@
 # Auto MDF InvoISys
 
-Sistema avançado de automação para emissão e averbação de MDF-e com integração ao Invoisys.
+Automacao do fluxo MDF-e com uma central moderna em PySide6. A aplicacao oferece um painel unico para iniciar scripts, acompanhar logs e responder dialogos emitidos pelos robos sem depender do antigo front-end Tkinter.
 
-## 📋 Descrição
+## Principais recursos
+- Janela unica em PySide6 com selecao de scripts, logs em tempo real e barra de progresso.
+- Bridge Qt intercepta alertas, prompts e confirms emitidos pelos scripts e mostra dialogos nativos.
+- Modulo data/automation_focus.py garante que o navegador correto esteja ativo.
+- ProgressManager em data/progress_manager.py grava estado em data/automation_progress.json para feedback constante.
+- Cada execucao gera logs dedicados em logs/ e protege contra execucoes simultaneas.
 
-Este projeto automatiza o processo de:
-1. Preenchimento de dados MDF-e
-2. Configuração parcial de modal rodoviário
-3. Preenchimento de informações adicionais e seguros
-4. Averbação no sistema segurador
-5. Coleta de dados de averbação
+## Requisitos
+- Python 3.10 ou superior (Windows recomendado).
+- Acesso ao Invoisys e ao portal de averbacao autenticados.
+- Permissao para instalar dependencias Python (PySide6, pyautogui, pyperclip, pygetwindow).
 
-## 🚀 Início Rápido
+## Instalacao
+### Windows com virtualenv (padrao)
+1. Abra o Prompt de Comando na raiz do projeto.
+2. Execute install.bat para criar .venv e instalar dependencias.
+3. Inicie a GUI com python AutoMDF-Start.py (o launcher relanca dentro da .venv automaticamente).
 
-### ⚠️ Dependências Sob Demanda
+### Windows com --user
+1. Rode install_user.bat para instalar apenas no perfil atual.
+2. Opcionalmente crie uma .venv manualmente se preferir isolar o ambiente.
 
-A verificação de dependências agora ocorre **apenas quando erros de módulo são detectados durante a execução**:
+### Linux, macOS ou Codespaces
+1. Torne o script executavel com chmod +x install.sh.
+2. Execute ./install.sh.
+3. Rode python AutoMDF-Start.py dentro do ambiente configurado.
 
-- Se um script tentar usar `pyautogui` ou `pyperclip` e não encontrar, você será notificado
-- A GUI oferecerá instalar automaticamente
-- Você pode verificar e instalar manualmente a qualquer momento via botões
+### Instalacao manual
+1. python -m venv .venv
+2. Ative o ambiente (Windows: .\.venv\Scripts\activate, Linux/macOS: source .venv/bin/activate).
+3. pip install -r requirements.txt
 
-### 1. Instalar Dependências (Opcional até precisar)
+## Inicio rapido
+1. Execute python AutoMDF-Start.py.
+2. Aguarde o launcher criar ou ativar a .venv e conferir dependencias.
+3. Selecione um script da pasta scripts/.
+4. Clique em Iniciar para rodar. Use Parar para encerrar a execucao atual.
+5. Utilize Exportar Log ou Abrir Log para acessar os registros em logs/.
 
-**Opção A: Usando virtualenv (Recomendado)**
+## Execucao direta de scripts
+Os scripts continuam executaveis via linha de comando (ideal para depuracao):
 
-Windows CMD:
-```batch
-install.bat
-.\\venv\\Scripts\\activate.bat
-python AutoMDF-Start.py
+    python "scripts/ITU X DHL.py"
+    python "scripts/SOROCABA X DHL.py"
+
+Quando executados fora da GUI, os scripts usam dialogs Tkinter de emergencia, mas o comportamento preferencial permanece atraves do bridge Qt.
+
+## Estrutura do projeto
+```
+Auto-MDF-Invoysis/
+|-- AutoMDF-Start.py        # Launcher principal (cria .venv e inicia PySide6)
+|-- app/                    # Codigo da interface moderna
+|   |-- main.py             # Entry point da QApplication
+|   |-- main_window.py      # Janela principal e logica de UI
+|   |-- runner.py           # Gerencia a execucao dos scripts
+|   `-- dialogs.py          # Dialogos usados pelo bridge
+|-- data/
+|   |-- automation_focus.py # Rotinas de foco do navegador
+|   |-- progress_manager.py # Persistencia do progresso em JSON
+|   `-- automation_progress.json
+|-- scripts/                # Automacoes MDF-e (ITU, Sorocaba e outras)
+|-- tools/install.py        # Instalador unificado de dependencias
+|-- install.bat / install_user.bat / install.sh
+|-- requirements.txt
+|-- logs/
+`-- CHANGELOG.md
 ```
 
-**Opção B: Instalação para o usuário (--user)**
-
-Windows CMD:
-```batch
-install_user.bat
-python AutoMDF-Start.py
-```
-
-**Opção C: Instalação via GUI**
-
-Depois de abrir a GUI, clique em "📥 Instalar Dependências" na aba Controle.
-
-### 2. Executar a Automação
-
-```bash
-python AutoMDF-Start.py
-```
-
-Interface com 3 abas:
-- **🎛️ Controle** - Selecionar e iniciar scripts + Gerenciar dependências
-- **▶️ Em Execução** - Monitorar execução em tempo real
-- **📜 Histórico** - Ver log de todas as execuções
-
-### 3. Se Houver Erro de Módulo
-
-Se um script precisar de uma dependência que não está instalada:
-1. Você verá um aviso no log
-2. A GUI oferecerá instalar automaticamente
-3. Clique "Sim" para instalar e tente novamente
-
-## 📁 Estrutura do Projeto
-
-```
-Auto MDF InvoISys/
-├── ITU X DHL.py                 # Script de automação (ITU)
-├── SOROCABA X DHL.py            # Script de automação (Sorocaba)
-├── AutoMDF-Start.py     # Interface gráfica (USE ESTE)
-├── progress_manager.py          # Gerenciador de progresso em tempo real
-├── requirements.txt             # Dependências Python
-├── install.bat                  # Instalador (Windows CMD)
-├── install_user.bat             # Instalador com --user (Windows CMD)
-└── README.md                    # Este arquivo
-```
-
-## 📦 Dependências
-
-**Obrigatórias**
-- `pyautogui` - Automação de GUI
-- `pyperclip` - Gerenciamento de clipboard
-
-**Recomendadas**
-- `pygetwindow` - Ajuda a manter a janela do navegador em foco durante as automações
-
-Todas podem ser instaladas automaticamente via `install.bat`, `install_user.bat` ou pela GUI.
-
-## 🎯 Recursos
-
-### GUI v0.5.0-Alpha-GUI
-
-✅ **Verificação Inteligente de Dependências**
-- Verifica apenas quando erros de módulo ocorrem
-- Oferece instalar automaticamente ao detectar
-- Não bloqueia a GUI na inicialização
-- Botões para verificação e instalação manual
-
-✅ **Execução Única**
-- Apenas um script por vez
-- Validação contra múltiplas execuções
-
-✅ **Responsiva**
-- GUI não trava durante execução
-- Scripts rodam em processos isolados
-
-✅ **Monitoramento em Tempo Real**
-- Output capturado linha por linha
-- Status: Executando, Concluído, Erro, Parado
-- Tempo decorrido e % de progresso
-- Histórico completo
-
-✅ **Gerenciamento Fácil**
-- Copiar logs para clipboard
-- Salvar histórico em arquivo
-- Parar execução a qualquer momento
-- Gerenciar dependências (Instalar, Verificar)
-
-### Progresso em Tempo Real
-
-Se adaptar seus scripts com `ProgressManager`:
-
-```python
-from progress_manager import ProgressManager
-
-progress = ProgressManager()
-progress.start(total_steps=10)
-
-for i in range(1, 11):
-    progress.update(i * 10, f"Etapa {i}/10")
-    # seu código aqui
-    
-progress.complete()
-```
-
-## 🔧 Como Usar
-
-### Executar via GUI (Recomendado)
-
-1. Abra a GUI: `python AutoMDF-Start.py`
-2. **Primeira execução**: Instale as dependências (clique "📥 Instalar Dependências")
-3. Aba **🎛️ Controle**: Selecione script
-4. Clique **▶ Iniciar Execução**
-5. Aba **▶️ Em Execução**: Monitore em tempo real
-6. Aguarde conclusão ou clique **⏹ Parar**
-
-### Gerenciar Dependências na GUI
-
-Na aba **🎛️ Controle**, você tem dois botões:
-
-- **📥 Instalar Dependências** - Instala automaticamente
-- **✓ Verificar Dependências** - Verifica status e oferece instalar se necessário
-
-### Executar Script Diretamente
-
-```bash
-python "ITU X DHL.py"
-```
-
-ou
-
-```bash
-python "SOROCABA X DHL.py"
-```
-
-### Menu Principal
-
-O script `1. MDF.py` foi descontinuado e removido. Utilize a interface gráfica `AutoMDF-Start.py`.
-
-## 📊 Abas da GUI v0.5.0-Alpha-GUI
-
-### 🎛️ Controle
-- Dropdown de scripts disponíveis
-- Botões: Iniciar, Parar
-- Informações gerais
-- Status em tempo real
-- Campo para selecionar a aba do navegador (0 mantém a atual, 1-9 definem a aba)
-- **Seção de Gerenciamento de Dependências:**
-  - 📥 Instalar Dependências
-  - ✓ Verificar Dependências
-
-### ▶️ Em Execução
-- Painel do script atual
-- Status (Executando, Concluído, Erro)
-- Tempo decorrido
-- % de progresso
-- Output completo
-- Botão: Copiar Log
-
-### 📜 Histórico
-- Log de todas as execuções
-- Timestamps para cada ação
-- Cores por tipo (info, success, error, warning)
-- Registra verificação e instalação de dependências
-- Botões: Salvar, Limpar histórico
-
-## � Gerenciamento de Dependências
-
-### Verificação Automática
-
-A GUI verifica dependências em:
-1. **Inicialização** - Ao abrir a aplicação
-2. **Antes de executar** - Antes de rodar qualquer script
-3. **Sob demanda** - Via botão "✓ Verificar Dependências"
-
-### Instalação Obrigatória
-
-Se as dependências faltarem:
-- Janela obrigatória bloqueará a interface
-- Você deve instalar antes de continuar
-- Duas opções: Automática ou Manual
-
-### Botões de Gerenciamento
-
-**📥 Instalar Dependências**
-- Abre janela interativa
-- Tenta instalar automaticamente com pip
-- Mostra progresso em tempo real
-
-**✓ Verificar Dependências**
-- Verifica status atual
-- Mostra quais estão presentes/faltando
-- Oferece instalar se necessário
-
-## 🛠️ Instalação Detalhada
-
-### Windows CMD (Recomendado)
-
-```batch
-:: Instalação com virtualenv
-install.bat
-
-:: Ou instalação com --user
-install_user.bat
-
-:: Executar GUI
-python AutoMDF-Start.py
-```
-
-### Windows PowerShell
-
-```powershell
-# Ativar execução de scripts (se necessário)
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-
-# Executar instalador
-.\install.ps1
-
-# Ativar virtualenv
-.\venv\Scripts\Activate.ps1
-
-# Executar GUI
-python AutoMDF-Start.py
-```
-
-## ⚙️ Requisitos do Sistema
-
-- **Python 3.8+**
-- **Windows 7+** (testado em Windows 10/11)
-- **Navegador** (Chrome, Edge, Firefox - compatível com PyAutoGUI)
-- **Acesso ao Invoisys** logado
-- **Acesso ao site de averbação** logado
-
-## 🐛 Troubleshooting
-
-### "Python não encontrado"
-```bash
-python --version
-```
-
-### "Dependências obrigatórias"
-- Clique em "📥 Instalar Dependências" na aba Controle
-- Ou execute `install.bat` manualmente
-
-### "Nenhum script em execução"
-- Verifique que os arquivos `.py` estão na mesma pasta
-- Nomes devem conter "itu", "sorocaba" ou "dhl"
-
-### "GUI não responde"
-- GUI atualiza a cada 500ms (é normal uma pequena latência)
-- Verifique a aba **▶️ Em Execução** para ver progresso real
-
-### "Script executado mas sem output"
-- Output é capturado após as primeiras linhas
-- Aguarde alguns segundos para atualização
-
-## 📝 Integração com ProgressManager
-
-Para adicionar progresso em tempo real em seus scripts:
-
-```python
-from progress_manager import ProgressManager
-
-progress = ProgressManager()
-progress.start(total_steps=10)
-progress.add_log("🚀 Iniciando automação...")
-
-progress.update(50, "Preenchendo dados...", 5)
-progress.add_log("✓ Dados preenchidos")
-
-progress.complete("✅ Automação concluída!")
-```
-
-## 📖 Documentação Adicional
-
-Consulte:
-- `CHANGELOG.md` - Histórico de mudanças e atualizações
-
-## 🔐 Segurança
-
-Scripts rodam em processos isolados sem compartilhamento de estado.
-
-Use FAILSAFE do PyAutoGUI:
-
-```python
-pyautogui.FAILSAFE = True
-```
-
----
-
-**Versão**: v0.5.0-Alpha-GUI | **Última atualização**: 3 de novembro de 2025
+## Dicas e solucao de problemas
+- PySide6 nao encontrado: execute install.bat ou install_user.bat ou rode python tools/install.py --mode venv.
+- Nenhum script listado: confirme que arquivos .py estao dentro de scripts/ e que o nome termina com .py.
+- Logs vazios: verifique permissoes de escrita em logs/ e se o antivirus nao bloqueia a pasta.
+- Erro de foco no navegador: valide se o navegador esta aberto e fixado na barra de tarefas; ajuste MDF_BROWSER_TAB se necessario.
+- Dependencias extras: execute python AutoMDF-Start.py e use os botoes de verificar ou instalar dependencias.
+
+## Uso
+Este repositorio destina-se ao time interno de automacao. Consulte os responsaveis antes de redistribuir ou adaptar para outros contextos.

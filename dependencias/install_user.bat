@@ -13,7 +13,7 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 echo Instalando dependencias para o usuario atual...
-python tools\install.py --mode user %*
+python ..\tools\install.py --mode user %*
 if %ERRORLEVEL% NEQ 0 (
   echo.
   echo A instalacao encontrou erros. Consulte os logs acima.
