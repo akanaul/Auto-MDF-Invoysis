@@ -32,3 +32,4 @@ __all__ = [
     "ProgressManager",
     "track_progress",
 ]
+# Mantemos __all__ explícito para preservar a compatibilidade dos scripts.

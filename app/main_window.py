@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QSizePolicy,
+    QSpinBox,
     QStatusBar,
     QVBoxLayout,
     QWidget,
@@ -57,6 +58,15 @@ class MainWindow(QMainWindow):
 
         self._default_browser_tab = self._normalize_browser_tab(os.environ.get("MDF_BROWSER_TAB", "1"))
         os.environ["MDF_BROWSER_TAB"] = str(self._default_browser_tab)
+        self._default_browser_window_hint = os.environ.get("MDF_BROWSER_TITLE_HINT", "").strip()
+        raw_slot = (
+            os.environ.get("MDF_BROWSER_TASKBAR_SLOT")
+            or os.environ.get("MDF_EDGE_TASKBAR_SLOT")
+            or "1"
+        )
+        self._default_taskbar_slot = self._normalize_taskbar_slot(raw_slot)
+        os.environ["MDF_BROWSER_TASKBAR_SLOT"] = str(self._default_taskbar_slot)
+        os.environ["MDF_EDGE_TASKBAR_SLOT"] = str(self._default_taskbar_slot)
 
         self._current_script: Optional[Path] = None
         self._current_log_path: Optional[Path] = None
@@ -77,6 +87,7 @@ class MainWindow(QMainWindow):
         self._progress_timer.start()
 
         self._refresh_script_list()
+        self._refresh_browser_windows()
         self._update_log_buttons(False)
         self._apply_idle_progress_state()
 
@@ -115,7 +126,7 @@ class MainWindow(QMainWindow):
 
         browser_row = self._create_row(layout)
 
-        browser_label = QLabel("Aba inicial do navegador:")
+        browser_label = QLabel("Aba inicial do Microsoft Edge:")
         browser_row.addWidget(browser_label)
 
         self.browser_tab_combo = QComboBox()
@@ -128,6 +139,32 @@ class MainWindow(QMainWindow):
             self.browser_tab_combo.setCurrentIndex(default_index)
         browser_row.addWidget(self.browser_tab_combo)
         browser_row.addStretch(1)
+
+        taskbar_row = self._create_row(layout)
+
+        taskbar_label = QLabel("Posição do Edge na barra de tarefas:")
+        taskbar_row.addWidget(taskbar_label)
+
+        self.taskbar_slot_spin = QSpinBox()
+        self.taskbar_slot_spin.setRange(1, 9)
+        self.taskbar_slot_spin.setValue(self._default_taskbar_slot)
+        self.taskbar_slot_spin.setToolTip("Informe a posição do Microsoft Edge fixado na barra de tarefas do Windows (Win+Número).")
+        taskbar_row.addWidget(self.taskbar_slot_spin)
+        taskbar_row.addStretch(1)
+
+        window_row = self._create_row(layout)
+
+        window_label = QLabel("Janela do Microsoft Edge:")
+        window_row.addWidget(window_label)
+
+        self.browser_window_combo = QComboBox()
+        self.browser_window_combo.setEditable(True)
+        self.browser_window_combo.setPlaceholderText("Detectar Microsoft Edge automaticamente")
+        window_row.addWidget(self.browser_window_combo)
+
+        self.refresh_windows_button = QPushButton("Atualizar janelas")
+        window_row.addWidget(self.refresh_windows_button)
+        window_row.addStretch(1)
 
         status_row = self._create_row(layout)
 
@@ -167,6 +204,7 @@ class MainWindow(QMainWindow):
         self.verify_deps_button.clicked.connect(self._on_verify_dependencies)
         self.export_log_button.clicked.connect(self._on_export_log)
         self.open_log_button.clicked.connect(self._on_open_log)
+        self.refresh_windows_button.clicked.connect(self._refresh_browser_windows)
 
         self.runner.log_message.connect(self._on_log_message)
         self.runner.bridge_payload.connect(self._on_bridge_payload)
@@ -195,12 +233,27 @@ class MainWindow(QMainWindow):
         tab_choice = self._selected_browser_tab()
         os.environ["MDF_BROWSER_TAB"] = str(tab_choice)
 
+        window_hint = self._selected_browser_window_hint()
+        if window_hint:
+            os.environ["MDF_BROWSER_TITLE_HINT"] = window_hint
+        else:
+            os.environ.pop("MDF_BROWSER_TITLE_HINT", None)
+        self._default_browser_window_hint = window_hint
+
+        slot_choice = self._selected_taskbar_slot()
+        os.environ["MDF_BROWSER_TASKBAR_SLOT"] = str(slot_choice)
+        os.environ["MDF_EDGE_TASKBAR_SLOT"] = str(slot_choice)
+
         self._user_requested_stop = False
         self._start_new_log_session(script_name)
 
         if focus is not None:
             with contextlib.suppress(Exception):
+                focus.set_taskbar_slot(slot_choice)
+                focus.prepare_for_execution()
                 focus.target_tab = tab_choice
+                focus.set_preferred_window_title(window_hint)
+                focus.ensure_browser_focus(allow_taskbar=True, preserve_tab=False)
 
         ProgressManager.reset(str(self.progress_file))
 
@@ -333,6 +386,61 @@ class MainWindow(QMainWindow):
         else:
             self.statusBar().showMessage("Nenhum script encontrado na pasta 'scripts'.", 5000)
 
+    def _refresh_browser_windows(self) -> None:
+        if not hasattr(self, "browser_window_combo"):
+            return
+
+        combo = self.browser_window_combo
+        button = getattr(self, "refresh_windows_button", None)
+
+        if focus is None or not hasattr(focus, "list_window_titles"):
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItem("Detecção automática indisponível", "")
+            combo.blockSignals(False)
+            combo.setEnabled(False)
+            if button is not None:
+                button.setEnabled(False)
+            return
+
+        try:
+            titles = focus.list_window_titles()
+        except Exception:
+            titles = []
+
+        previous_data = combo.currentData()
+        previous_text = combo.currentText().strip()
+        combo.blockSignals(True)
+        combo.clear()
+        default_label = "Detectar Microsoft Edge automaticamente"
+        combo.addItem(default_label, "")
+        for title in titles:
+            combo.addItem(title, title)
+
+        preferred = ""
+        if isinstance(previous_data, str) and previous_data.strip():
+            preferred = previous_data.strip()
+        elif previous_text and previous_text != default_label:
+            preferred = previous_text
+        elif self._default_browser_window_hint:
+            preferred = self._default_browser_window_hint
+
+        if preferred:
+            index = combo.findData(preferred)
+            if index < 0 and preferred:
+                combo.addItem(preferred, preferred)
+                index = combo.findData(preferred)
+            if index >= 0:
+                combo.setCurrentIndex(index)
+            else:
+                combo.setCurrentText(preferred)
+        else:
+            combo.setCurrentIndex(0)
+        combo.blockSignals(False)
+        combo.setEnabled(True)
+        if button is not None:
+            button.setEnabled(True)
+
     def _set_running_state(self, running: bool) -> None:
         self.run_button.setEnabled(not running)
         self.stop_button.setEnabled(running)
@@ -342,6 +450,14 @@ class MainWindow(QMainWindow):
             self.verify_deps_button.setEnabled(not running)
         if hasattr(self, "browser_tab_combo"):
             self.browser_tab_combo.setEnabled(not running)
+        if hasattr(self, "taskbar_slot_spin"):
+            self.taskbar_slot_spin.setEnabled(not running)
+        if hasattr(self, "browser_window_combo"):
+            allowed = not running and focus is not None and hasattr(focus, "list_window_titles")
+            self.browser_window_combo.setEnabled(allowed)
+        if hasattr(self, "refresh_windows_button"):
+            allowed_btn = not running and focus is not None and hasattr(focus, "list_window_titles")
+            self.refresh_windows_button.setEnabled(allowed_btn)
 
     def _start_new_log_session(self, script_name: str) -> None:
         self._log_buffer.clear()
@@ -426,6 +542,32 @@ class MainWindow(QMainWindow):
             return int(data)
         except (TypeError, ValueError):
             return self._default_browser_tab
+
+    def _selected_browser_window_hint(self) -> str:
+        if not hasattr(self, "browser_window_combo"):
+            return ""
+        combo = self.browser_window_combo
+        data = combo.currentData()
+        if isinstance(data, str) and data.strip():
+            return data.strip()
+        if combo.isEditable():
+            text = combo.currentText().strip()
+            if text:
+                return text
+        return ""
+
+    @staticmethod
+    def _normalize_taskbar_slot(value: str | int) -> int:
+        try:
+            numeric = int(value)
+        except (TypeError, ValueError):
+            return 1
+        return max(1, min(9, numeric))
+
+    def _selected_taskbar_slot(self) -> int:
+        if hasattr(self, "taskbar_slot_spin"):
+            return self.taskbar_slot_spin.value()
+        return self._default_taskbar_slot
 
     # ------------------------------------------------------------------
     # Qt overrides

@@ -11,7 +11,6 @@ from __future__ import annotations
 import contextlib
 import os
 import time
-from dataclasses import dataclass, field
 from typing import Any, Optional
 
 _pyautogui: Any
@@ -63,26 +62,42 @@ if os.name == "nt":
 
 
 GUI_WINDOW_KEYWORDS = ["Auto MDF InvoISys", "Control Center v0.5.0-Alpha-GUI"]
-BROWSER_WINDOW_KEYWORDS = ["Google Chrome", "Microsoft Edge", "Mozilla Firefox", "Brave", "Opera"]
+BROWSER_WINDOW_KEYWORDS = ["Microsoft Edge", "Edge"]
+BROWSER_KEYWORDS_LOWER = [keyword.lower() for keyword in BROWSER_WINDOW_KEYWORDS]
 
 
-@dataclass
 class BrowserFocusController:
     """Tracks and restores focus to the configured browser window."""
 
-    target_tab: int = field(default_factory=lambda: BrowserFocusController._resolve_target_tab())
-    last_browser_window: object | None = None
-    last_taskbar_launch: float = 0.0
-    taskbar_launched: bool = False
-    taskbar_launch_attempts: int = 0
+    def __init__(self) -> None:
+        self._target_tab = self._resolve_target_tab()
+        self._preferred_title = self._resolve_preferred_title()
+        self.last_browser_window: object | None = None
+        self.last_taskbar_launch: float = 0.0
+        self.taskbar_launched: bool = False
+        self.taskbar_launch_attempts: int = 0
+        self._force_tab_on_focus = True
+        self._taskbar_slot = self._resolve_taskbar_slot()
+
+    @property
+    def target_tab(self) -> int:
+        return self._target_tab
+
+    @target_tab.setter
+    def target_tab(self, value: int) -> None:
+        self._target_tab = self._normalize_tab(value)
+        self._force_tab_on_focus = True
 
     def prepare_for_execution(self) -> None:
         """Reset state prior to running an automation script."""
-        self.target_tab = self._resolve_target_tab()
+        self._target_tab = self._resolve_target_tab()
+        self._preferred_title = self._resolve_preferred_title()
         self.last_browser_window = None
         self.last_taskbar_launch = 0.0
         self.taskbar_launched = False
         self.taskbar_launch_attempts = 0
+        self._force_tab_on_focus = True
+        self._taskbar_slot = self._resolve_taskbar_slot()
 
     def prepare_taskbar_retry(self) -> None:
         """Allow a new Win+1 attempt when focus returns to the GUI."""
@@ -105,8 +120,19 @@ class BrowserFocusController:
         preserve_tab: bool = False,
     ) -> bool:
         """Guarantee the browser window is focused."""
+        explicit_switch = switch_to_target_tab is not None
         if switch_to_target_tab is None:
             switch_to_target_tab = not preserve_tab
+
+        should_switch_tab = bool(switch_to_target_tab)
+        if (
+            not should_switch_tab
+            and not explicit_switch
+            and not preserve_tab
+            and self._force_tab_on_focus
+        ):
+            should_switch_tab = True
+
         if gw:
             try:
                 active = self._get_active_window()
@@ -115,18 +141,18 @@ class BrowserFocusController:
 
             if self._is_browser_window(active):
                 self._record_activation(active)
-                if switch_to_target_tab:
+                if should_switch_tab:
                     self._switch_to_target_tab()
                 return True
 
-            if self._is_gui_window(active) and self._activate_browser_window(switch_to_target_tab):
+            if self._is_gui_window(active) and self._activate_browser_window(should_switch_tab):
                 return True
 
-        if self._activate_browser_window(switch_to_target_tab):
+        if self._activate_browser_window(should_switch_tab):
             return True
 
         if allow_taskbar and self.launch_taskbar_slot():
-            return self._activate_browser_window(switch_to_target_tab)
+            return self._activate_browser_window(should_switch_tab)
 
         return False
 
@@ -136,7 +162,7 @@ class BrowserFocusController:
             return False
         success = self.ensure_browser_focus(allow_taskbar=False, switch_to_target_tab=False)
         if success:
-            self.wait_until_browser_active()
+            self.wait_until_browser_active(force_tab=False)
         return success
 
     def _is_gui_active(self) -> bool:
@@ -149,9 +175,15 @@ class BrowserFocusController:
         return self._is_gui_window(active)
 
     def launch_taskbar_slot(self, wait: float = 0.6) -> bool:
-        """Attempt to bring the pinned browser to the foreground via Win+1."""
+        """Bring Microsoft Edge to the foreground using the configured taskbar slot."""
         if self._is_browser_active():
             self.taskbar_launched = True
+            return True
+
+        if self._activate_preferred_window(should_switch_tab=True):
+            self.taskbar_launched = True
+            if wait > 0:
+                time.sleep(wait)
             return True
 
         launched = self._launch_browser_via_taskbar()
@@ -163,13 +195,38 @@ class BrowserFocusController:
     # Internal helpers
     # ------------------------------------------------------------------
     @staticmethod
-    def _resolve_target_tab() -> int:
-        raw = os.environ.get("MDF_BROWSER_TAB", "").strip()
+    def _normalize_tab(value: Any) -> int:
         try:
-            value = int(raw)
+            numeric = int(value)
         except (TypeError, ValueError):
             return 0
-        return 0 if value <= 0 else min(value, 9)
+        if numeric <= 0:
+            return 0
+        return min(numeric, 9)
+
+    @staticmethod
+    def _resolve_target_tab() -> int:
+        raw = os.environ.get("MDF_BROWSER_TAB", "").strip()
+        return BrowserFocusController._normalize_tab(raw)
+
+    @staticmethod
+    def _resolve_preferred_title() -> str:
+        return os.environ.get("MDF_BROWSER_TITLE_HINT", "").strip()
+
+    @staticmethod
+    def _normalize_taskbar_slot(value: Any) -> int:
+        try:
+            numeric = int(value)
+        except (TypeError, ValueError):
+            return 1
+        if numeric <= 0:
+            return 1
+        return min(numeric, 9)
+
+    @staticmethod
+    def _resolve_taskbar_slot() -> int:
+        raw = os.environ.get("MDF_BROWSER_TASKBAR_SLOT", "") or os.environ.get("MDF_EDGE_TASKBAR_SLOT", "")
+        return BrowserFocusController._normalize_taskbar_slot(raw or 1)
 
     def _is_browser_window(self, window) -> bool:
         return self._matches_keywords(window, BROWSER_WINDOW_KEYWORDS)
@@ -181,7 +238,7 @@ class BrowserFocusController:
         title = self._active_window_title().lower()
         if not title:
             return False
-        return any(keyword.lower() in title for keyword in BROWSER_WINDOW_KEYWORDS)
+        return any(keyword in title for keyword in BROWSER_KEYWORDS_LOWER)
 
     def _active_window_title(self) -> str:
         if gw is not None:
@@ -202,6 +259,9 @@ class BrowserFocusController:
 
     def _matches_keywords(self, window, keywords: list[str]) -> bool:
         if lowered := self._window_title_lower(window):
+            preferred = self._preferred_title.lower()
+            if preferred and preferred in lowered:
+                return True
             return any(keyword.lower() in lowered for keyword in keywords)
         return False
 
@@ -213,12 +273,16 @@ class BrowserFocusController:
             return str(title).lower()
         return ""
 
-    def _switch_to_target_tab(self) -> None:
-        if self.target_tab <= 0 or pyautogui is None:
-            return
+    def _switch_to_target_tab(self) -> bool:
+        if self._target_tab <= 0 or pyautogui is None:
+            self._force_tab_on_focus = False
+            return False
         with contextlib.suppress(Exception):
-            pyautogui.hotkey("ctrl", str(self.target_tab))
+            pyautogui.hotkey("ctrl", str(self._target_tab))
             time.sleep(0.15)
+            self._force_tab_on_focus = False
+            return True
+        return False
 
     def _launch_browser_via_taskbar(self) -> bool:
         if pyautogui is None:
@@ -234,12 +298,14 @@ class BrowserFocusController:
         self.last_taskbar_launch = now
         self.taskbar_launch_attempts += 1
         with contextlib.suppress(Exception):
-            pyautogui.hotkey("win", "1")
+            pyautogui.hotkey("win", str(self._taskbar_slot))
             self.taskbar_launched = True
             return True
         return False
 
-    def _activate_browser_window(self, switch_to_target_tab: bool) -> bool:
+    def _activate_browser_window(self, should_switch_tab: bool) -> bool:
+        if self._activate_preferred_window(should_switch_tab):
+            return True
         if gw:
             candidates: list[object] = []
             active = self._get_active_window()
@@ -261,10 +327,10 @@ class BrowserFocusController:
                             candidates.append(window)
 
             for window in candidates:
-                if self._activate_candidate_window(window, switch_to_target_tab):
+                if self._activate_candidate_window(window, should_switch_tab):
                     return True
 
-        if self._activate_via_winapi(switch_to_target_tab):
+        if self._activate_via_winapi(should_switch_tab):
             self.taskbar_launched = True
             return True
 
@@ -280,34 +346,132 @@ class BrowserFocusController:
     def ensure_browser_focus_preserve_tab(self, *, allow_taskbar: bool = True) -> bool:
         return self.ensure_browser_focus(allow_taskbar=allow_taskbar, preserve_tab=True)
 
-    def wait_until_browser_active(self, timeout: float = 1.6, poll_interval: float = 0.12) -> bool:
+    def wait_until_browser_active(
+        self,
+        timeout: float = 1.6,
+        poll_interval: float = 0.12,
+        *,
+        force_tab: Optional[bool] = None,
+    ) -> bool:
         """Wait until the browser window becomes the foreground window."""
         if gw is None:
             return True
+        should_switch = self._force_tab_on_focus if force_tab is None else bool(force_tab)
         end_time = time.time() + max(0.0, timeout)
         while time.time() < end_time:
             if self._is_browser_window(self._get_active_window()):
+                if should_switch:
+                    self._switch_to_target_tab()
                 return True
             time.sleep(max(0.01, poll_interval))
-        return self._is_browser_window(self._get_active_window())
+        success = self._is_browser_window(self._get_active_window())
+        if success and should_switch:
+            self._switch_to_target_tab()
+        return success
 
-    def _activate_candidate_window(self, window, switch_to_target_tab: bool) -> bool:
+    def switch_to_tab(
+        self,
+        tab: int,
+        *,
+        ensure_focus: bool = True,
+        allow_taskbar: bool = True,
+    ) -> bool:
+        """Switch the active browser to the given tab, optionally restoring focus."""
+
+        normalized = self._normalize_tab(tab)
+        if normalized <= 0:
+            self._force_tab_on_focus = False
+            return False
+
+        self._target_tab = normalized
+
+        if ensure_focus:
+            success = self.ensure_browser_focus(
+                allow_taskbar=allow_taskbar,
+                switch_to_target_tab=True,
+                preserve_tab=False,
+            )
+            if success:
+                self.wait_until_browser_active(force_tab=False)
+            return success
+
+        return self._switch_to_target_tab()
+
+    def _activate_candidate_window(self, window, should_switch_tab: bool) -> bool:
         with contextlib.suppress(Exception):
             if getattr(window, "isMinimized", False):
                 window.restore()
             window.activate()
             self._record_activation(window)
             time.sleep(0.25)
-            if switch_to_target_tab:
+            if should_switch_tab:
                 self._switch_to_target_tab()
             return True
         return False
+
+    def _activate_preferred_window(self, should_switch_tab: bool) -> bool:
+        if gw is None:
+            return False
+        hint = self._preferred_title.strip()
+        if not hint:
+            return False
+
+        seen: set[int] = set()
+        matches: list[object] = []
+        with contextlib.suppress(Exception):
+            matches = list(gw.getWindowsWithTitle(hint))
+        if not matches:
+            return False
+        for window in matches:
+            handle = getattr(window, "_hWnd", None)
+            if isinstance(handle, int):
+                if handle in seen:
+                    continue
+                seen.add(handle)
+            if self._activate_candidate_window(window, should_switch_tab):
+                return True
+        return False
+
+    # ------------------------------------------------------------------
+    # Preferences
+    # ------------------------------------------------------------------
+    def list_window_titles(self) -> list[str]:
+        titles: set[str] = set()
+        if gw is None:
+            return []
+        with contextlib.suppress(Exception):
+            for title in gw.getAllTitles():
+                cleaned = str(title).strip()
+                if not cleaned:
+                    continue
+                lowered = cleaned.lower()
+                if any(keyword in lowered for keyword in BROWSER_KEYWORDS_LOWER):
+                    titles.add(cleaned)
+        return sorted(titles, key=str.casefold)
+
+    def set_preferred_window_title(self, title: str) -> None:
+        cleaned = title.strip()
+        self._preferred_title = cleaned
+        if cleaned:
+            os.environ["MDF_BROWSER_TITLE_HINT"] = cleaned
+        else:
+            os.environ.pop("MDF_BROWSER_TITLE_HINT", None)
+
+    def set_taskbar_slot(self, slot: int) -> None:
+        normalized = self._normalize_taskbar_slot(slot)
+        self._taskbar_slot = normalized
+        os.environ["MDF_BROWSER_TASKBAR_SLOT"] = str(normalized)
+        os.environ["MDF_EDGE_TASKBAR_SLOT"] = str(normalized)
+
+    @property
+    def preferred_window_title(self) -> str:
+        return self._preferred_title
 
     def _record_activation(self, window) -> None:
         self.last_browser_window = window
         self.taskbar_launched = True
 
-    def _activate_via_winapi(self, switch_to_target_tab: bool) -> bool:
+    def _activate_via_winapi(self, should_switch_tab: bool) -> bool:
         if (
             ctypes is None
             or _EnumWindows is None
@@ -359,13 +523,13 @@ class BrowserFocusController:
             if _SetForegroundWindow is not None:
                 with contextlib.suppress(Exception):
                     if _SetForegroundWindow(hwnd):
-                        if switch_to_target_tab:
+                        if should_switch_tab:
                             self._switch_to_target_tab()
                         return True
             if _BringWindowToTop is not None:
                 with contextlib.suppress(Exception):
                     _BringWindowToTop(hwnd)
-                    if switch_to_target_tab:
+                    if should_switch_tab:
                         self._switch_to_target_tab()
                     return True
         return False
@@ -373,3 +537,4 @@ class BrowserFocusController:
 
 focus = BrowserFocusController()
 __all__ = ["focus", "BrowserFocusController"]
+# Exporta instâncias prontas para scripts legados.

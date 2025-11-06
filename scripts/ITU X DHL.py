@@ -22,6 +22,7 @@ try:
         confirm_topmost,
         configure_stdio,
         ensure_browser_focus,
+        switch_browser_tab,
         prompt_topmost,
         register_exception_handler,
     )
@@ -40,6 +41,7 @@ except ModuleNotFoundError:
         confirm_topmost,
         configure_stdio,
         ensure_browser_focus,
+        switch_browser_tab,
         prompt_topmost,
         register_exception_handler,
     )
@@ -58,9 +60,28 @@ progress.add_log('Automação iniciada')
 #---------------------------------------------------------------
 # ABRIR NAVEGADOR
 time.sleep(1)
+try:
+    initial_tab = int(os.environ.get('MDF_BROWSER_TAB', '').strip() or '0')
+except ValueError:
+    initial_tab = 0
+window_hint = os.environ.get('MDF_BROWSER_TITLE_HINT', '').strip()
+
 focus.prepare_for_execution()
+if window_hint:
+    try:
+        focus.set_preferred_window_title(window_hint)
+    except Exception:
+        pass
+if initial_tab > 0:
+    try:
+        focus.target_tab = initial_tab
+    except Exception:
+        pass
 focus.launch_taskbar_slot()
-ensure_browser_focus()
+ensure_browser_focus(
+    target_tab=initial_tab if initial_tab > 0 else None,
+    preserve_tab=initial_tab <= 0,
+)
 time.sleep(1)
 _checkpoint(progress, 5, 'Navegador em foco')
 print('[AutoMDF] Navegador preparado', flush=True)
@@ -90,13 +111,19 @@ time.sleep(0.5)
 #PROMPT DE COMANDO PARA DIGITAR A DT
 codigo = prompt_topmost(
     text='Digite o número do DT:',
-    title='DT'
+    title='DT',
+    require_input=True,
+    cancel_message='Cancelar a inserção do número do DT interrompe a automação. Deseja cancelar mesmo assim?'
 )
 
 if not codigo:
     pyautogui.FAILSAFE = True
     _abort(progress, 'Nenhum código DT informado. A automação foi encerrada.')
-codigo = cast(str, codigo)
+
+codigo = cast(str, codigo).strip()
+if not codigo:
+    pyautogui.FAILSAFE = True
+    _abort(progress, 'Nenhum código DT informado. A automação foi encerrada.')
 pyautogui.write(codigo.upper(), interval=0.1)
 pyautogui.press('enter')
 time.sleep(0.3)
@@ -109,9 +136,9 @@ print('[AutoMDF] DT localizado', flush=True)
 #ALERTA
 alert_topmost(
     'Antes de prosseguir:\n\n'
-    '1. Baixe o arquivo XML;\n'
-    '2. Mantenha 3 abas do Invoisys abertas no começo do navegador;\n'
-    '3. Mantenha o site de averbação logado.\n\n'
+    '1. Confirme que o Microsoft Edge está aberto com as abas necessárias do Invoisys;\n'
+    '2. Baixe o arquivo XML;\n'
+    '3. Garanta que o site de averbação esteja logado no Edge.\n\n'
     'OBS: Para interromper o processo, deslize o mouse repetidamente em direção ao canto superior direito da tela.'
 )
 time.sleep(2)
@@ -135,7 +162,7 @@ if caps_state & 1:
 #---------------------------------------------------------------
 
 # IR PARA 3ª ABA DO NAVEGADOR
-pyautogui.hotkey('ctrl', '3')
+switch_browser_tab(3)
 time.sleep(1)
 
 
@@ -283,13 +310,21 @@ if opcao == 'Cancelar':
     pyautogui.FAILSAFE = True
     _abort(progress, 'Nenhum código NCM selecionado. A automação foi encerrada.')
 elif opcao == 'Outro código':
-    codigo = prompt_topmost('Digite o código NCM:')
+    codigo = prompt_topmost(
+        text='Digite o código NCM:',
+        title='Código NCM',
+        require_input=True,
+        cancel_message='Cancelar a inserção do código NCM interrompe a automação. Deseja cancelar mesmo assim?'
+    )
     if not codigo:
         pyautogui.FAILSAFE = True
         _abort(progress, 'Nenhum código NCM digitado. A automação foi encerrada.')
 else:
     codigo = opcao
-codigo = cast(str, codigo)
+codigo = cast(str, codigo).strip()
+if not codigo:
+    pyautogui.FAILSAFE = True
+    _abort(progress, 'Nenhum código NCM digitado. A automação foi encerrada.')
 pyautogui.write(codigo.upper(), interval=0.1)
 pyautogui.press('enter')
 #---------------------------------------------------------------

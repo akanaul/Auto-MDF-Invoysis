@@ -3,6 +3,8 @@ progress_manager.py - Gerenciador de progresso em tempo real para automação MD
 Permite que scripts de automação comuniquem seu progresso via arquivo JSON compartilhado.
 """
 
+# sourcery skip: assign-if-exp, remove-unnecessary-else
+
 from __future__ import annotations
 
 import json
@@ -49,10 +51,7 @@ class ProgressManager:
             return Path(custom_path)
 
         env_path = os.environ.get("MDF_PROGRESS_FILE")
-        if env_path:
-            return Path(env_path)
-
-        return cls.DEFAULT_FILE_PATH
+        return Path(env_path) if env_path else cls.DEFAULT_FILE_PATH
 
     def start(self, total_steps: int = 100):
         """Inicia o monitoramento de progresso."""
@@ -97,14 +96,17 @@ class ProgressManager:
             self._store_message(message, "warning")
             self._save_progress()
 
-    def add_error(self, message: str):
-        """Adiciona erro."""
+    def add_error(self, message: str, *, details: Optional[str] = None):
+        """Adiciona erro com opção de detalhamento adicional."""
         with self.lock:
-            timestamp = self._store_message(message, "error")
+            extra = f" {details}" if details else ""
+            composed_message = f"{message}{extra}".strip()
+            timestamp = self._store_message(composed_message, "error")
             self.progress_data["errors"].append(
                 {
                     "timestamp": timestamp,
-                    "message": message,
+                    "message": composed_message,
+                    "details": details,
                 }
             )
             self._save_progress()
@@ -136,22 +138,24 @@ class ProgressManager:
             )
             self._save_progress()
 
-    def error(self, error_message: str):
+    def error(self, error_message: str, *, details: Optional[str] = None):
         """Marca como erro."""
         timestamp = datetime.now().isoformat()
         with self.lock:
             self.progress_data["status"] = "error"
-            self.progress_data["current_step"] = f"Erro: {error_message}"
+            composed_message = f"{error_message} {details}".strip()
+            self.progress_data["current_step"] = f"Erro: {composed_message}"
             self.progress_data["errors"].append(
                 {
                     "timestamp": timestamp,
-                    "message": error_message,
+                    "message": composed_message,
+                    "details": details,
                 }
             )
             self.progress_data["messages"].append(
                 {
                     "timestamp": timestamp,
-                    "message": error_message,
+                    "message": composed_message,
                     "type": "error",
                 }
             )
@@ -232,7 +236,7 @@ if __name__ == "__main__":
         (30, "Preenchendo dados de MDF"),
         (50, "Preenchendo dados de MDF"),
         (70, "Preenchendo dados de MDF"),
-        (85, "Preenchsendo dados de MDF"),
+        (85, "Preenchendo dados de MDF"),
         (100, "Finalizando..."),
     ]
 
@@ -244,3 +248,4 @@ if __name__ == "__main__":
 
     pm.complete()
     print("✅ Progresso concluído!")
+# Bloco de demonstração executado apenas em modo standalone.

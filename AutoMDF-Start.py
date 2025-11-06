@@ -151,16 +151,26 @@ def ensure_gui_dependencies(python_executable: Path) -> None:
 
 def _show_startup_error(message: str) -> None:
     try:
-        import tkinter as tk
-        from tkinter import messagebox
+        from PySide6.QtWidgets import QApplication, QMessageBox
     except Exception:  # pragma: no cover - no GUI fallback
         print(message, file=sys.stderr)
         return
 
-    root = tk.Tk()
-    root.withdraw()
-    messagebox.showerror("Erro ao iniciar Auto MDF", message)
-    root.destroy()
+    app = QApplication.instance()
+    owns_app = False
+    if app is None:
+        app = QApplication([])
+        owns_app = True
+
+    box = QMessageBox()
+    box.setWindowTitle("Erro ao iniciar Auto MDF")
+    box.setIcon(QMessageBox.Icon.Critical)
+    box.setText(message)
+    box.setStandardButtons(QMessageBox.StandardButton.Ok)
+    box.exec()
+
+    if owns_app:
+        app.quit()
 
 
 def main() -> int:

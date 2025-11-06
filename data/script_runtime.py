@@ -1,6 +1,6 @@
 """Shared runtime helpers for Auto MDF automation scripts.
 
-Centralises bridge-aware dialog handling, browser focus restoration and
+Centralizes bridge-aware dialog handling, browser focus restoration and
 progress/error utilities so that individual scripts stay lightweight and
 consistent. Keeping the logic here reduces duplication and makes it easier to
 roll out compatibility fixes (for example, timing adjustments) across the
@@ -9,24 +9,49 @@ entire catalogue of scripts.
 
 from __future__ import annotations
 
-import json
 import os
 import sys
 import time
-from contextlib import contextmanager, suppress
-from functools import partial
-from typing import Any, Iterator, Optional, Sequence
+from contextlib import suppress
+from datetime import datetime
+from typing import Any, Optional, Sequence
 
 try:
     from .automation_focus import focus
 except Exception:  # pragma: no cover - fallback when packages are missing
     focus = None  # type: ignore[assignment]
 
-BRIDGE_ACTIVE = os.environ.get("MDF_BRIDGE_ACTIVE") == "1"
-BRIDGE_PREFIX = os.environ.get("MDF_BRIDGE_PREFIX", "__MDF_GUI_BRIDGE__")
-BRIDGE_ACK = os.environ.get("MDF_BRIDGE_ACK", "__MDF_GUI_ACK__")
-BRIDGE_CANCEL = os.environ.get("MDF_BRIDGE_CANCEL", "__MDF_GUI_CANCEL__")
+from .dialog_service import DialogService
+
 DEFAULT_TOTAL_STEPS = 100
+
+
+def _log_event(message: str, *, level: str = "info") -> None:
+    """Emit a unified diagnostic log entry for automation scripts."""
+
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    label = level.upper()
+    print(f"[AutoMDF][{label}][{timestamp}] {message}", flush=True)
+
+
+def _resolve_bridge_override() -> Optional[bool]:
+    """Decide whether the dialog bridge should be forced on or off."""
+
+    force = os.environ.get("MDF_FORCE_BRIDGE")
+    if force is not None:
+        normalized = force.strip().lower()
+        return normalized in {"1", "true", "yes", "on"}
+
+    return False
+
+
+_BRIDGE_OVERRIDE = _resolve_bridge_override()
+_DIALOG_SERVICE = DialogService(bridge_enabled=_BRIDGE_OVERRIDE)
+
+if _BRIDGE_OVERRIDE is False:
+    _log_event("Bridge de diálogo desativada (forçando Qt).", level="debug")
+elif _BRIDGE_OVERRIDE is True:
+    _log_event("Bridge de diálogo forçada explicitamente.", level="debug")
 
 
 def configure_stdio() -> None:
@@ -39,100 +64,144 @@ def configure_stdio() -> None:
 
 def ensure_browser_focus(
     *,
+    target_tab: Optional[int] = None,
     preserve_tab: bool = False,
     allow_taskbar: bool = True,
     retries: int = 6,
     retry_delay: float = 0.25,
+    switch_to_target_tab: Optional[bool] = None,
 ) -> bool:
-    """Attempt to bring the browser back to the foreground."""
+    """Attempt to bring the browser back to the foreground.
+
+    The helper now supports selecting a specific browser tab (1-9). When a
+    ``target_tab`` is provided the function ensures the controller tracks that
+    tab and does not preserve the current one.
+    """
     if focus is None:
+        _log_event("automation_focus module indisponível; pulando restauração de foco.", level="warning")
         return False
+
+    if _DIALOG_SERVICE.is_modal_active():
+        _log_event(
+            "Restauração de foco ignorada porque um diálogo Qt modal está ativo.",
+            level="debug",
+        )
+        return False
+
+    if target_tab is not None:
+        with suppress(Exception):
+            focus.target_tab = target_tab
+        preserve_tab = False
 
     focus.prepare_taskbar_retry()
     time.sleep(0.05)
 
     attempts = max(1, retries)
     pause = max(0.05, retry_delay)
+
+    effective_switch = switch_to_target_tab
+    if effective_switch is None:
+        effective_switch = not preserve_tab
+    if target_tab is not None:
+        effective_switch = True
+
     for attempt in range(attempts):
         with suppress(Exception):
-            if focus.ensure_browser_focus(allow_taskbar=allow_taskbar, preserve_tab=preserve_tab) and focus.wait_until_browser_active():
+            if focus.ensure_browser_focus(
+                allow_taskbar=allow_taskbar,
+                preserve_tab=preserve_tab,
+                switch_to_target_tab=effective_switch,
+            ) and focus.wait_until_browser_active(force_tab=bool(effective_switch and not preserve_tab)):
+                _log_event("Foco do navegador restabelecido com sucesso.")
                 return True
         if attempt < attempts - 1:
             time.sleep(pause)
 
-    if focus.wait_until_browser_active():
+    if focus.wait_until_browser_active(force_tab=bool(effective_switch and not preserve_tab)):
+        _log_event("Foco do navegador ativo detectado após tentativas auxiliares.")
         return True
 
-    print(
-        "[AutoMDF] Aviso: não foi possível restabelecer o foco do navegador após o alerta.",
-        flush=True,
+    _log_event(
+        "Não foi possível restabelecer o foco do navegador após o alerta.",
+        level="warning",
     )
     return False
 
 
-def _send_bridge_payload(payload: dict[str, Any]) -> None:
-    message = BRIDGE_PREFIX + json.dumps(payload, ensure_ascii=False)
-    print(message, flush=True)
+def switch_browser_tab(
+    tab: int,
+    *,
+    ensure_focus: bool = True,
+    allow_taskbar: bool = True,
+) -> bool:
+    """Switch the automation focus to a specific browser tab."""
 
+    if focus is None:
+        _log_event(
+            "automation_focus module indisponível; não é possível trocar de aba.",
+            level="warning",
+        )
+        return False
 
-def _parse_bridge_response(line: str) -> tuple[Optional[str], bool]:
-    if not line:
-        return None, True
-    response = line.rstrip("\n")
-    if response == BRIDGE_CANCEL:
-        return None, True
-    return ("", True) if response == BRIDGE_ACK else (response, True)
-
-
-def _bridge_request(payload: dict[str, Any]) -> tuple[Optional[str], bool]:
-    if not BRIDGE_ACTIVE:
-        return None, False
     try:
-        _send_bridge_payload(payload)
-        return _parse_bridge_response(sys.stdin.readline())
-    except Exception:
-        return None, False
+        success = focus.switch_to_tab(
+            tab,
+            ensure_focus=ensure_focus,
+            allow_taskbar=allow_taskbar,
+        )
+    except AttributeError:
+        focus.target_tab = tab
+        success = ensure_browser_focus(
+            target_tab=tab,
+            allow_taskbar=allow_taskbar,
+            preserve_tab=False,
+        )
 
-
-@contextmanager
-def _tk_root() -> Iterator[Any]:
-    import tkinter as tk
-
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes("-topmost", True)
-    root.lift()
-    root.after(0, root.focus_force)
-    root.after(0, root.lift)
-    try:
-        yield root
-    finally:
-        try:
-            root.destroy()
-        finally:
-            ensure_browser_focus(preserve_tab=True)
+    if success:
+        _log_event(f"Aba do navegador alterada para {tab}.", level="debug")
+    else:
+        _log_event(f"Não foi possível alternar para a aba {tab}.", level="warning")
+    return success
 
 
 def prompt_topmost(*args, **kwargs) -> Optional[str]:
-    """Show a prompt that stays on top, harmonised with the GUI bridge."""
+    """Show a prompt that stays on top, harmonized with the GUI bridge."""
+    require_input = bool(kwargs.pop("require_input", False))
+    allow_cancel = bool(kwargs.pop("allow_cancel", True))
+    cancel_message = kwargs.pop("cancel_message", "")
+
     text, title, default_value = _parse_text_title_defaults(args, kwargs, "Entrada")
-
-    response, handled = _bridge_request(
-        {
-            "type": "prompt",
-            "text": text or "",
-            "title": title or "Entrada",
-            "default": default_value or "",
-        }
+    _log_event(
+        f"Solicitando prompt (title='{title}', require_input={require_input}, allow_cancel={allow_cancel}).",
+        level="debug",
     )
-    if handled:
+    _DIALOG_SERVICE.refresh_environment()
+
+    def restore_focus() -> None:
         ensure_browser_focus(preserve_tab=True)
-        return response
 
-    from tkinter import simpledialog
+    try:
+        value = _DIALOG_SERVICE.prompt(
+            text=str(text or ""),
+            title=str(title or "Entrada"),
+            default=str(default_value or "") if default_value is not None else "",
+            require_input=require_input,
+            allow_cancel=allow_cancel,
+            cancel_message=str(cancel_message or ""),
+            on_restore_focus=restore_focus,
+            parent=None,
+        )
+    except Exception as exc:  # pragma: no cover - capture unexpected GUI failures
+        _log_event(f"Falha ao exibir prompt Qt: {exc}", level="error")
+        return None
 
-    with _tk_root() as root:
-        return simpledialog.askstring(title or "Entrada", text or "", parent=root, initialvalue=default_value)
+    if value is None:
+        _log_event("Prompt encerrado sem valor informado.", level="warning")
+        return None
+
+    trimmed = value.strip()
+    _log_event(f"Resposta recebida do prompt (length={len(trimmed)}).", level="debug")
+    return trimmed or value
 
 
 def alert_topmost(*args, **kwargs) -> str:
@@ -140,94 +209,62 @@ def alert_topmost(*args, **kwargs) -> str:
     text, title, button_default = _parse_text_title_defaults(args, kwargs, "Informação")
     button_text = kwargs.get("button", button_default or "OK")
 
-    _, handled = _bridge_request(
-        {
-            "type": "alert",
-            "text": text or "",
-            "title": title or "Informação",
-            "button": button_text,
-        }
-    )
-    if handled:
+    _DIALOG_SERVICE.refresh_environment()
+
+    def restore_focus() -> None:
         ensure_browser_focus(preserve_tab=True)
-        return button_text
 
-    from tkinter import messagebox
-
-    with _tk_root() as root:
-        messagebox.showinfo(title or "Informação", text or "", parent=root)
-    return button_text
+    try:
+        _DIALOG_SERVICE.alert(
+            text=text or "",
+            title=title or "Informação",
+            button=button_text or "OK",
+            on_restore_focus=restore_focus,
+            parent=None,
+        )
+        _log_event(f"Alerta exibido (title='{title}', button='{button_text}').", level="debug")
+    except Exception as exc:  # pragma: no cover
+        _log_event(f"Falha ao exibir alerta Qt: {exc}", level="error")
+    return button_text or "OK"
 
 
 def confirm_topmost(*args, **kwargs) -> Optional[str]:
     """Show a confirmation dialog that stays on top."""
     text, title, _ = _parse_text_title_defaults(args, kwargs, "Confirmação")
     buttons = kwargs.get("buttons") or ["OK", "Cancel"]
+    if not isinstance(buttons, list) or not buttons:
+        buttons = ["OK", "Cancel"]
+    else:
+        buttons = [str(btn) for btn in buttons]
 
-    response, handled = _bridge_request(
-        {
-            "type": "confirm",
-            "text": text or "",
-            "title": title or "Confirmação",
-            "buttons": buttons,
-        }
-    )
-    if handled:
+    _DIALOG_SERVICE.refresh_environment()
+
+    def restore_focus() -> None:
         ensure_browser_focus(preserve_tab=True)
-        if response is not None:
-            return response
-        return "Cancel" if "Cancel" in buttons else buttons[-1]
 
-    import tkinter as tk
+    try:
+        choice = _DIALOG_SERVICE.confirm(
+            text=text or "",
+            title=title or "Confirmação",
+            buttons=buttons,
+            on_restore_focus=restore_focus,
+            parent=None,
+        )
+    except Exception as exc:  # pragma: no cover
+        _log_event(f"Falha ao exibir confirmação Qt: {exc}", level="error")
+        return None
 
-    with _tk_root() as root:
-        top = tk.Toplevel(root)
-        top.title(title or "Confirmação")
-        top.transient(root)
-        top.attributes("-topmost", True)
-        top.resizable(False, False)
+    if choice is None:
+        fallback = "Cancel" if "Cancel" in buttons else buttons[-1]
+        _log_event(
+            f"Confirmação sem resposta; retornando fallback '{fallback}'.",
+            level="warning",
+        )
+        return fallback
 
-        result = {"value": buttons[0]}
-
-        def on_click(value: str) -> None:
-            result["value"] = value
-            top.destroy()
-
-        def on_close() -> None:
-            result["value"] = "Cancel" if "Cancel" in buttons else buttons[-1]
-            top.destroy()
-
-        top.protocol("WM_DELETE_WINDOW", on_close)
-
-        label = tk.Label(top, text=text or "", justify="left", wraplength=420)
-        label.pack(padx=20, pady=(20, 10))
-
-        button_frame = tk.Frame(top)
-        button_frame.pack(padx=20, pady=(0, 20))
-
-        columns = min(3, len(buttons)) or 1
-        for idx, btn_text in enumerate(buttons):
-            button = tk.Button(button_frame, text=btn_text, width=18, command=partial(on_click, btn_text))
-            row = idx // columns
-            col = idx % columns
-            button.grid(row=row, column=col, padx=5, pady=5, sticky="ew")
-
-        top.update_idletasks()
-        top.lift()
-        top.focus_force()
-        width = top.winfo_width()
-        height = top.winfo_height()
-        screen_width = top.winfo_screenwidth()
-        screen_height = top.winfo_screenheight()
-        pos_x = (screen_width // 2) - (width // 2)
-        pos_y = (screen_height // 2) - (height // 2)
-        top.geometry(f"+{pos_x}+{pos_y}")
-        top.grab_set()
-        top.focus_force()
-        top.lift()
-
-        root.wait_window(top)
-        return result["value"]
+    trimmed = choice.strip()
+    _log_event(f"Confirmação respondida com '{trimmed}'.", level="debug")
+    return trimmed or choice
 
 
 def register_exception_handler(progress_manager: Any) -> None:
@@ -240,6 +277,7 @@ def register_exception_handler(progress_manager: Any) -> None:
             return
         with suppress(Exception):
             progress_manager.error(f"Erro inesperado: {exc_value}")
+        _log_event(f"Exceção não tratada: {exc_type.__name__}: {exc_value}", level="error")
         try:
             alert_topmost(
                 "Ocorreu um erro inesperado. Verifique o log para detalhes.\n\n" f"{exc_value}"
@@ -315,6 +353,7 @@ __all__ = [
     "confirm_topmost",
     "configure_stdio",
     "ensure_browser_focus",
+    "switch_browser_tab",
     "prompt_topmost",
     "register_exception_handler",
 ]
