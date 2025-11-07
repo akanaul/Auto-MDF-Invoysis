@@ -1,33 +1,44 @@
 {
-  "status": "running",
+  "status": "error",
   "percentage": 20,
-  "current_step": "Aguardando download do XML e validações iniciais",
+  "current_step": "Erro: Erro inesperado: PyAutoGUI fail-safe triggered from mouse moving to a corner of the screen. To disable this fail-safe, set pyautogui.FAILSAFE to False. DISABLING FAIL-SAFE IS NOT RECOMMENDED. None",
   "total_steps": 100,
   "current_step_number": 0,
-  "start_time": "2025-11-06T08:49:29.425141",
+  "start_time": "2025-11-07T07:37:07.259599",
   "elapsed_seconds": 0,
   "messages": [
     {
-      "timestamp": "2025-11-06T08:49:29.426287",
+      "timestamp": "2025-11-07T07:37:07.260523",
       "message": "Automação iniciada",
       "type": "info"
     },
     {
-      "timestamp": "2025-11-06T08:49:31.988947",
+      "timestamp": "2025-11-07T07:37:09.823869",
       "message": "Navegador em foco",
       "type": "info"
     },
     {
-      "timestamp": "2025-11-06T08:49:44.853727",
+      "timestamp": "2025-11-07T07:37:21.772624",
       "message": "DT localizado e carregado",
       "type": "info"
     },
     {
-      "timestamp": "2025-11-06T08:49:52.457472",
+      "timestamp": "2025-11-07T07:37:27.712728",
       "message": "Aguardando download do XML e validações iniciais",
       "type": "info"
+    },
+    {
+      "timestamp": "2025-11-07T07:37:44.481072",
+      "message": "Erro inesperado: PyAutoGUI fail-safe triggered from mouse moving to a corner of the screen. To disable this fail-safe, set pyautogui.FAILSAFE to False. DISABLING FAIL-SAFE IS NOT RECOMMENDED. None",
+      "type": "error"
     }
   ],
-  "errors": [],
-  "estimated_time_remaining": 92
+  "errors": [
+    {
+      "timestamp": "2025-11-07T07:37:44.481072",
+      "message": "Erro inesperado: PyAutoGUI fail-safe triggered from mouse moving to a corner of the screen. To disable this fail-safe, set pyautogui.FAILSAFE to False. DISABLING FAIL-SAFE IS NOT RECOMMENDED. None",
+      "details": null
+    }
+  ],
+  "estimated_time_remaining": 81
 }

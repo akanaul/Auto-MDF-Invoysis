@@ -1,5 +1,21 @@
 # Changelog - Auto MDF InvoISys
 
+## 2025-11-07 - Monitor de progresso sempre visível
+
+- Adicionada `app/progress_overlay.py`, criando um overlay compacto que mantém o progresso e o status da automação visíveis mesmo com a janela principal minimizada.
+- Atualizado `app/main_window.py` para acionar o overlay, tornar a barra de progresso da GUI não interativa e reforçar o ciclo de vida dos estados de execução.
+- Removida a integração experimental com a barra de tarefas do Windows; o feedback permanece disponível na barra de progresso interna e no overlay flutuante.
+- Reorganizados utilitários da janela principal (ajustes em combos, formatação de logs e construção de linhas) para reduzir duplicação e manter o linting sem pendências.
+
+## 2025-11-06 - Foco unificado no Microsoft Edge e Refatoração
+
+- Adicionada `data/dialog_service.py` para centralizar prompts/alertas Qt e impedir loops de reativação.
+- Refatorado `data/automation_focus.py` para suportar apenas o Microsoft Edge, com seletor de janela preferencial e configuração do slot da barra de tarefas.
+- Estendidos os utilitários em `data/script_runtime.py`, permitindo seleção explícita de abas via `switch_browser_tab` e restauração de foco mais previsível.
+- Atualizada a janela principal (`app/main_window.py`) com textos específicos do Edge, lista de janelas filtrada e novo campo para informar a posição do Edge na barra de tarefas.
+- Ajustados os scripts `scripts/ITU X DHL.py` e `scripts/SOROCABA X DHL.py` para aproveitar os novos utilitários, consumir dicas de ambiente e orientar o operador sobre o uso do Edge.
+- Documentado o requisito do Edge e as variáveis `MDF_BROWSER_TASKBAR_SLOT` / `MDF_BROWSER_TAB` no README, alinhando instalação e solução de problemas.
+
 ## 2025-11-05 - Limpeza de legados
 
 - Removidos os artefatos de GUI legada (`AutoMDF-Start.legacy.py`, `automation_focus.py`, `progress_manager.py`).

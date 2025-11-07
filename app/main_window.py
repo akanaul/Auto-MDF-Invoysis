@@ -1,16 +1,18 @@
 """Main window for the modern Auto MDF automation control center."""
+# sourcery skip: all
 
 from __future__ import annotations
 
 import contextlib
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QCloseEvent, QTextCursor
 from PySide6.QtWidgets import (
     QComboBox,
@@ -32,6 +34,7 @@ from PySide6.QtWidgets import (
 from data.progress_manager import ProgressManager
 
 from . import dialogs
+from .progress_overlay import ProgressOverlay
 from .constants import (
     LOGS_DIR,
     LOG_MAX_LINES,
@@ -44,6 +47,17 @@ try:  # pragma: no cover - optional dependency runtime guard
     from data.automation_focus import focus
 except ModuleNotFoundError:  # pragma: no cover
     focus = None  # type: ignore[assignment]
+
+
+_AUTOMDF_LOG_RE = re.compile(r"^\[AutoMDF\]\[(?P<level>[A-Z]+)\]\[(?P<time>\d{2}:\d{2}:\d{2})\]\s*(?P<body>.*)$")
+_LEVEL_LABELS = {
+    "DEBUG": "Detalhe",
+    "INFO": "Informação",
+    "WARNING": "Aviso",
+    "ERROR": "Erro",
+}
+
+
 
 
 class MainWindow(QMainWindow):
@@ -69,12 +83,15 @@ class MainWindow(QMainWindow):
         os.environ["MDF_EDGE_TASKBAR_SLOT"] = str(self._default_taskbar_slot)
 
         self._current_script: Optional[Path] = None
+        self._current_script_label: str = ""
         self._current_log_path: Optional[Path] = None
         self._log_buffer: list[str] = []
+        self._raw_log_buffer: list[str] = []
         self._log_write_failed = False
         self._automation_active = False
         self._user_requested_stop = False
         self.progress_file = Path(ProgressManager.DEFAULT_FILE_PATH)
+        self._progress_overlay = ProgressOverlay()
 
         self.runner = ScriptRunner(python_executable, self)
 
@@ -100,16 +117,20 @@ class MainWindow(QMainWindow):
         parent_layout.addLayout(row)
         return row
 
+    def _new_row(self, parent_layout: QVBoxLayout, label_text: str) -> tuple[QHBoxLayout, QLabel]:
+        row = self._create_row(parent_layout)
+        label = QLabel(label_text)
+        row.addWidget(label)
+        return row, label
+
+    # sourcery skip: extract-method
     def _build_ui(self) -> None:
         central = QWidget(self)
         layout = QVBoxLayout(central)
         layout.setContentsMargins(18, 18, 18, 18)
         layout.setSpacing(12)
 
-        script_row = self._create_row(layout)
-
-        script_label = QLabel("Script de automação:")
-        script_row.addWidget(script_label)
+        script_row, _ = self._new_row(layout, "Script de automação:")
 
         self.script_combo = QComboBox()
         self.script_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -124,10 +145,7 @@ class MainWindow(QMainWindow):
         script_row.addWidget(self.run_button)
         script_row.addWidget(self.stop_button)
 
-        browser_row = self._create_row(layout)
-
-        browser_label = QLabel("Aba inicial do Microsoft Edge:")
-        browser_row.addWidget(browser_label)
+        browser_row, _ = self._new_row(layout, "Aba inicial do Microsoft Edge:")
 
         self.browser_tab_combo = QComboBox()
         self.browser_tab_combo.setToolTip("Escolha a aba que deve receber o foco antes da automação (0 mantém a atual).")
@@ -140,10 +158,7 @@ class MainWindow(QMainWindow):
         browser_row.addWidget(self.browser_tab_combo)
         browser_row.addStretch(1)
 
-        taskbar_row = self._create_row(layout)
-
-        taskbar_label = QLabel("Posição do Edge na barra de tarefas:")
-        taskbar_row.addWidget(taskbar_label)
+        taskbar_row, _ = self._new_row(layout, "Posição do Edge na barra de tarefas:")
 
         self.taskbar_slot_spin = QSpinBox()
         self.taskbar_slot_spin.setRange(1, 9)
@@ -152,10 +167,7 @@ class MainWindow(QMainWindow):
         taskbar_row.addWidget(self.taskbar_slot_spin)
         taskbar_row.addStretch(1)
 
-        window_row = self._create_row(layout)
-
-        window_label = QLabel("Janela do Microsoft Edge:")
-        window_row.addWidget(window_label)
+        window_row, _ = self._new_row(layout, "Janela do Microsoft Edge:")
 
         self.browser_window_combo = QComboBox()
         self.browser_window_combo.setEditable(True)
@@ -166,16 +178,17 @@ class MainWindow(QMainWindow):
         window_row.addWidget(self.refresh_windows_button)
         window_row.addStretch(1)
 
-        status_row = self._create_row(layout)
-
-        self.status_label = QLabel("Aguardando automação...")
+        status_row, self.status_label = self._new_row(layout, "Status:")
+        self.status_label.setText("Aguardando automação...")
         self.status_label.setWordWrap(True)
-        status_row.addWidget(self.status_label, stretch=1)
+        status_row.addStretch(1)
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
         self.progress_bar.setFormat("%p%")
+        self.progress_bar.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.progress_bar.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         status_row.addWidget(self.progress_bar)
 
         self.log_view = QPlainTextEdit()
@@ -266,7 +279,7 @@ class MainWindow(QMainWindow):
             return
 
         self._current_script = script_path
-        self._apply_idle_progress_state()
+        self._current_script_label = self._friendly_script_label(script_path)
         self._set_running_state(True)
         self.status_label.setText(f"Executando {script_path.name}...")
 
@@ -277,9 +290,10 @@ class MainWindow(QMainWindow):
         self._user_requested_stop = True
         self.runner.stop_script()
         self.status_label.setText("Encerrando script...")
+        self._progress_overlay.show_indeterminate("Encerrando automação...")
 
     def _on_export_log(self) -> None:
-        if not self._log_buffer:
+        if not self._raw_log_buffer:
             QMessageBox.information(self, "Log vazio", "Não há conteúdo para exportar.")
             return
         default_name = "execucao.log"
@@ -295,7 +309,7 @@ class MainWindow(QMainWindow):
             return
         try:
             with open(path, "w", encoding="utf-8") as handle:
-                handle.write("\n".join(self._log_buffer) + "\n")
+                handle.write("\n".join(self._raw_log_buffer) + "\n")
         except Exception as exc:
             QMessageBox.critical(self, "Erro ao exportar", f"Falha ao salvar o log:\n{exc}")
             return
@@ -348,16 +362,27 @@ class MainWindow(QMainWindow):
     def _on_process_started(self, script_path: Path) -> None:
         self._automation_active = True
         self.status_label.setText(f"Executando {script_path.name}...")
+        self.progress_bar.setRange(0, 0)
         self.progress_bar.setValue(0)
+        overlay_label = self._current_script_label or script_path.stem
+        self._progress_overlay.show_indeterminate(f"Executando {overlay_label}...")
         self._update_log_buttons(True)
 
     def _on_process_finished(self, exit_code: int) -> None:
         self._automation_active = False
         self._set_running_state(False)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(100 if exit_code == 0 else 0)
         summary = "Execução concluída com sucesso." if exit_code == 0 else f"Execução encerrada (código {exit_code})."
         if self._user_requested_stop and exit_code != 0:
             summary = "Execução interrompida pelo usuário."
         self.status_label.setText(summary)
+        if self._user_requested_stop:
+            self._progress_overlay.show_result(True, "Automação interrompida pelo usuário.", auto_hide_ms=3500)
+        elif exit_code == 0:
+            self._progress_overlay.show_result(True, "Automação concluída com sucesso.", auto_hide_ms=3500)
+        else:
+            self._progress_overlay.show_result(False, f"Falha na automação (código {exit_code}).", auto_hide_ms=6000)
         if exit_code != 0 and not self._user_requested_stop:
             QMessageBox.warning(
                 self,
@@ -386,6 +411,7 @@ class MainWindow(QMainWindow):
         else:
             self.statusBar().showMessage("Nenhum script encontrado na pasta 'scripts'.", 5000)
 
+    # sourcery skip: extract-method
     def _refresh_browser_windows(self) -> None:
         if not hasattr(self, "browser_window_combo"):
             return
@@ -397,8 +423,7 @@ class MainWindow(QMainWindow):
             combo.blockSignals(True)
             combo.clear()
             combo.addItem("Detecção automática indisponível", "")
-            combo.blockSignals(False)
-            combo.setEnabled(False)
+            self._finalize_combo_state(combo, False)
             if button is not None:
                 button.setEnabled(False)
             return
@@ -436,8 +461,7 @@ class MainWindow(QMainWindow):
                 combo.setCurrentText(preferred)
         else:
             combo.setCurrentIndex(0)
-        combo.blockSignals(False)
-        combo.setEnabled(True)
+        self._finalize_combo_state(combo, True)
         if button is not None:
             button.setEnabled(True)
 
@@ -461,6 +485,7 @@ class MainWindow(QMainWindow):
 
     def _start_new_log_session(self, script_name: str) -> None:
         self._log_buffer.clear()
+        self._raw_log_buffer.clear()
         self.log_view.clear()
         self._log_write_failed = False
         sanitized = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in script_name).strip("-") or "automacao"
@@ -477,10 +502,17 @@ class MainWindow(QMainWindow):
 
     def _append_log(self, message: str) -> None:
         timestamp = datetime.now().strftime("%H:%M:%S")
-        entry = f"[{timestamp}] {message}"
-        self._log_buffer.append(entry)
+        raw_entry = f"[{timestamp}] {message}"
+        display_entry = self._simplify_log_message(timestamp, message)
+
+        self._raw_log_buffer.append(raw_entry)
+        if len(self._raw_log_buffer) > LOG_MAX_LINES:
+            self._raw_log_buffer = self._raw_log_buffer[-LOG_MAX_LINES:]
+
+        self._log_buffer.append(display_entry)
         if len(self._log_buffer) > LOG_MAX_LINES:
             self._log_buffer = self._log_buffer[-LOG_MAX_LINES:]
+
         self.log_view.setPlainText("\n".join(self._log_buffer))
         self.log_view.moveCursor(QTextCursor.MoveOperation.End)
         self.log_view.ensureCursorVisible()
@@ -489,26 +521,75 @@ class MainWindow(QMainWindow):
             return
         try:
             with open(self._current_log_path, "a", encoding="utf-8") as handle:
-                handle.write(entry + "\n")
+                handle.write(raw_entry + "\n")
         except Exception:
             self._log_write_failed = True
             self.statusBar().showMessage("Falha ao gravar no arquivo de log.", 6000)
+
+    def _simplify_log_message(self, timestamp: str, message: str) -> str:
+        text = message.strip()
+        if not text:
+            return f"{timestamp} •"
+
+        if match := _AUTOMDF_LOG_RE.match(text):
+            return self._format_automdf_entry(match)
+
+        if text.startswith("[AutoMDF]"):
+            _, _, remainder = text.partition("]")
+            if remainder:
+                text = remainder.strip()
+
+        return f"{timestamp} • {text}"
+
+    @staticmethod
+    def _format_automdf_entry(match: re.Match[str]) -> str:
+        level = match.group("level").upper()
+        body = match.group("body").strip() or "(sem detalhes)"
+        friendly_level = _LEVEL_LABELS.get(level, level.title())
+        log_time = match.group("time")
+        return f"{log_time} • {friendly_level}: {body}"
 
     def _update_log_buttons(self, enabled: bool) -> None:
         self.export_log_button.setEnabled(enabled)
         self.open_log_button.setEnabled(enabled)
 
+    @staticmethod
+    def _finalize_combo_state(combo: QComboBox, enabled: bool) -> None:
+        combo.blockSignals(False)
+        combo.setEnabled(enabled)
+
     def _apply_idle_progress_state(self) -> None:
-        if not self._automation_active and not self.runner.isRunning():
-            self.status_label.setText("Aguardando automação...")
-            self.progress_bar.setValue(0)
+        self.status_label.setText("Aguardando automação...")
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self._automation_active = False
+        self._current_script = None
+        self._current_log_path = None
+        self._log_buffer.clear()
+        self._raw_log_buffer.clear()
+        self._log_write_failed = False
+        self.log_view.clear()
+        self._update_log_buttons(False)
+        self._current_script_label = ""
+        self._progress_overlay.hide_immediately()
 
     def _refresh_progress(self) -> None:
         data = ProgressManager.read_progress(str(self.progress_file))
         if not data:
-            if not self._automation_active:
+            if self._automation_active:
+                if self.progress_bar.maximum() != 0:
+                    self.progress_bar.setRange(0, 0)
+                overlay_label = self._current_script_label or "Automação"
+                self._progress_overlay.show_indeterminate(f"{overlay_label} em preparação...")
+            else:
+                if self.progress_bar.maximum() == 0:
+                    self.progress_bar.setRange(0, 100)
                 self.progress_bar.setValue(0)
+                self._progress_overlay.hide_immediately()
             return
+
+        if self.progress_bar.maximum() == 0:
+            self.progress_bar.setRange(0, 100)
 
         try:
             percentage = int(data.get("percentage", 0))
@@ -516,14 +597,26 @@ class MainWindow(QMainWindow):
             percentage = 0
         self.progress_bar.setValue(max(0, min(100, percentage)))
 
+        if self._automation_active:
+            overlay_message = (
+                str(data.get("current_step", "")).strip()
+                or str(data.get("status", "")).strip().title()
+                or "Automação em andamento"
+            )
+            self._progress_overlay.update_progress(percentage, overlay_message)
+
         status = str(data.get("status", "")).strip().lower()
         step = str(data.get("current_step", "")).strip()
         if status in {"running", "paused"} and step:
             self.status_label.setText(step)
         elif status == "completed":
             self.status_label.setText(step or "Automação concluída.")
+            if self._automation_active:
+                self._progress_overlay.show_result(True, step or "Automação concluída.")
         elif status == "error":
             self.status_label.setText(step or "Erro na automação.")
+            if self._automation_active:
+                self._progress_overlay.show_result(False, step or "Erro na automação.")
 
     @staticmethod
     def _normalize_browser_tab(value: Optional[str]) -> int:
@@ -550,10 +643,8 @@ class MainWindow(QMainWindow):
         data = combo.currentData()
         if isinstance(data, str) and data.strip():
             return data.strip()
-        if combo.isEditable():
-            text = combo.currentText().strip()
-            if text:
-                return text
+        if combo.isEditable() and (text := combo.currentText().strip()):
+            return text
         return ""
 
     @staticmethod
@@ -569,9 +660,11 @@ class MainWindow(QMainWindow):
             return self.taskbar_slot_spin.value()
         return self._default_taskbar_slot
 
-    # ------------------------------------------------------------------
-    # Qt overrides
-    # ------------------------------------------------------------------
+    @staticmethod
+    def _friendly_script_label(script: Path) -> str:
+        label = re.sub(r"[_-]+", " ", script.stem).strip()
+        return label or script.stem or script.name
+
     def closeEvent(self, event: QCloseEvent) -> None:  # type: ignore[override]
         if self.runner.isRunning():
             answer = QMessageBox.question(
@@ -586,4 +679,7 @@ class MainWindow(QMainWindow):
                 return
             self._on_stop_clicked()
             self.runner.wait(1500)
+        ProgressManager.reset(str(self.progress_file))
+        self._apply_idle_progress_state()
+        self._progress_overlay.close()
         super().closeEvent(event)
