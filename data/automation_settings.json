@@ -1,0 +1,13 @@
+{
+  "pyautogui_pause": 0.5,
+  "pyautogui_failsafe": true,
+  "focus_retry_seconds": 3.0,
+  "focus_retry_attempts": 3,
+  "pyautogui_minimum_sleep": 0.02,
+  "sleep_threshold_short": 0.25,
+  "sleep_threshold_medium": 1.2,
+  "sleep_scale_short": 1.0,
+  "sleep_scale_medium": 1.0,
+  "sleep_scale_long": 1.0,
+  "use_default_timers": true
+}

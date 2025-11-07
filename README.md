@@ -6,6 +6,7 @@ Automação do fluxo MDF-e com uma central moderna em PySide6. A aplicação ofe
 
 - Janela única em PySide6 com seleção de scripts, logs em tempo real e barra de progresso.
 - Indicador flutuante sempre visível para acompanhar o andamento das automações.
+- Painel de configurações em guia própria, com opção padrão para manter os tempos originais dos scripts e aba de temporizadores para ajustar pausa do PyAutoGUI, tentativas extras de foco e multiplicadores de `sleep` com lembrete visual do failsafe sempre ativo.
 - Bridge Qt intercepta alertas, prompts e *confirms* emitidos pelos scripts e mostra diálogos nativos.
 - Módulo `data/automation_focus.py` garante que o navegador correto esteja ativo.
 - `ProgressManager` em `data/progress_manager.py` grava estado em `data/automation_progress.json` para feedback constante.
@@ -49,7 +50,8 @@ Automação do fluxo MDF-e com uma central moderna em PySide6. A aplicação ofe
 2. Aguarde o launcher criar ou ativar a `.venv` e conferir dependências.
 3. Selecione um script da pasta `scripts/`.
 4. Clique em **Iniciar** para rodar. Use **Parar** para encerrar a execução atual.
-5. Utilize **Exportar Log** ou **Abrir Log** para acessar os registros em `logs/`.
+5. Ajuste, se necessário, as preferências na aba **Configurações** (por padrão a opção "Usar tempos padrão do script" mantém os timers originais).
+6. Utilize **Exportar Log** ou **Abrir Log** para acessar os registros em `logs/`.
 
 ## Execução direta de scripts
 
@@ -70,10 +72,16 @@ Auto-MDF-Invoysis/
 |-- app/                    # Código da interface moderna
 |   |-- main.py             # Entry point da QApplication
 |   |-- main_window.py      # Janela principal e lógica de UI
+|   |-- automation_service.py # Coordena execução, foco e telemetria
+|   |-- progress_overlay.py # Overlay flutuante com o status atual
+|   |-- progress_watcher.py # Observa o JSON de progresso e emite sinais
+|   |-- ui_components.py    # Widgets reutilizáveis (log, painel, configs)
 |   |-- runner.py           # Gerencia a execução dos scripts
 |   `-- dialogs.py          # Diálogos usados pelo bridge
 |-- data/
 |   |-- automation_focus.py # Rotinas de foco do navegador
+|   |-- automation_settings.py # Preferências persistidas da automação
+|   |-- automation_telemetry.py # Registro de telemetria amigável
 |   |-- progress_manager.py # Persistência do progresso em JSON
 |   `-- automation_progress.json
 |-- scripts/                # Automações MDF-e (Itu, Sorocaba e outras)

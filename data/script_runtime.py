@@ -25,6 +25,9 @@ from .dialog_service import DialogService
 
 DEFAULT_TOTAL_STEPS = 100
 
+_ORIGINAL_SLEEP = time.sleep
+_SLEEP_PATCHED = False
+
 
 def _log_event(message: str, *, level: str = "info") -> None:
     """Emit a unified diagnostic log entry for automation scripts."""
@@ -308,7 +311,6 @@ def apply_pyautogui_bridge(pyautogui_module: Any) -> None:
     setattr(pyautogui_module, "confirm", confirm_topmost)
     pyautogui_module.FAILSAFE = True
 
-    pause_env = os.environ.get("MDF_PYAUTOGUI_PAUSE")
     if pause_env := os.environ.get("MDF_PYAUTOGUI_PAUSE"):
         with suppress(ValueError):
             pause_value = float(pause_env)
@@ -320,6 +322,48 @@ def apply_pyautogui_bridge(pyautogui_module: Any) -> None:
             min_sleep_value = float(min_sleep_env)
             if min_sleep_value >= 0:
                 pyautogui_module.MINIMUM_SLEEP = min_sleep_value
+
+    _apply_sleep_scaling()
+
+
+def _apply_sleep_scaling() -> None:
+    global _SLEEP_PATCHED
+    if _SLEEP_PATCHED:
+        return
+
+    env = os.environ
+    short_threshold = _safe_float(env.get("MDF_SLEEP_THRESHOLD_SHORT"), default=0.35, minimum=0.0)
+    medium_threshold = _safe_float(env.get("MDF_SLEEP_THRESHOLD_MEDIUM"), default=1.2, minimum=short_threshold)
+
+    short_scale = _safe_float(env.get("MDF_SLEEP_SCALE_SHORT"), default=1.0, minimum=0.0)
+    medium_scale = _safe_float(env.get("MDF_SLEEP_SCALE_MEDIUM"), default=1.0, minimum=0.0)
+    long_scale = _safe_float(env.get("MDF_SLEEP_SCALE_LONG"), default=1.0, minimum=0.0)
+
+    def _scaled_sleep(seconds: float) -> None:
+        duration = seconds if isinstance(seconds, (int, float)) else 0.0
+        if duration < 0:
+            duration = 0.0
+        if duration <= short_threshold:
+            factor = short_scale
+        elif duration <= medium_threshold:
+            factor = medium_scale
+        else:
+            factor = long_scale
+        adjusted = duration * factor
+        if adjusted < 0:
+            adjusted = 0.0
+        _ORIGINAL_SLEEP(adjusted)
+
+    time.sleep = _scaled_sleep
+    _SLEEP_PATCHED = True
+
+
+def _safe_float(raw: Optional[str], *, default: float, minimum: float) -> float:
+    try:
+        value = float(raw) if raw is not None else default
+    except (TypeError, ValueError):
+        value = default
+    return max(minimum, value)
 
 
 def _parse_text_title_defaults(args: Sequence[Any], kwargs: dict[str, Any], default_title: str) -> tuple[str, str, Optional[str]]:
