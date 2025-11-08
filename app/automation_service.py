@@ -43,6 +43,7 @@ class AutomationService(QObject):
     automation_started = Signal(Path)
     automation_finished = Signal(int)
     telemetry_event = Signal(dict)
+    log_pause_request = Signal(bool)
 
     def __init__(
         self, python_executable: str, parent: Optional[QObject] = None
@@ -170,23 +171,31 @@ class AutomationService(QObject):
         self.telemetry_event.emit(entry)
         cfg = self._pending_config
         if cfg is not None and focus is not None:
-            success = False
-            attempts = max(1, int(self._settings.focus_retry_attempts))
-            delay = max(0.1, float(self._settings.focus_retry_seconds))
-            for _ in range(attempts):
-                with contextlib.suppress(Exception):
-                    success = focus.ensure_browser_focus(
-                        allow_taskbar=True, preserve_tab=False
+            # Pause logging to avoid interference with focus operations
+            self.log_pause_request.emit(True)
+            try:
+                # Give some time for the browser to start before attempting focus
+                time.sleep(2.0)
+                success = False
+                attempts = max(1, int(self._settings.focus_retry_attempts))
+                delay = max(0.1, float(self._settings.focus_retry_seconds))
+                for _ in range(attempts):
+                    with contextlib.suppress(Exception):
+                        success = focus.ensure_browser_focus(
+                            allow_taskbar=True, preserve_tab=False
+                        )
+                    if success:
+                        break
+                    time.sleep(delay)
+                if not success:
+                    entry = record_event(
+                        "focus_retry_failed",
+                        {"script": script_path.name, "attempts": attempts},
                     )
-                if success:
-                    break
-                time.sleep(delay)
-            if not success:
-                entry = record_event(
-                    "focus_retry_failed",
-                    {"script": script_path.name, "attempts": attempts},
-                )
-                self.telemetry_event.emit(entry)
+                    self.telemetry_event.emit(entry)
+            finally:
+                # Resume logging after focus attempt
+                self.log_pause_request.emit(False)
         self.automation_started.emit(script_path)
 
     def _on_process_finished(self, exit_code: int) -> None:

@@ -41,6 +41,7 @@ _BringWindowToTop: Any = None
 _ShowWindow: Any = None
 _GetForegroundWindow: Any = None
 _SW_RESTORE = 9
+_SW_MAXIMIZE = 3
 
 if os.name == "nt":
     import ctypes  # type: ignore
@@ -62,7 +63,7 @@ if os.name == "nt":
 
 
 GUI_WINDOW_KEYWORDS = ["Auto MDF InvoISys", "Control Center v0.5.0-Alpha-GUI"]
-BROWSER_WINDOW_KEYWORDS = ["Microsoft Edge", "Edge"]
+BROWSER_WINDOW_KEYWORDS = ["Microsoft Edge", "Edge", "Worktabs"]
 BROWSER_KEYWORDS_LOWER = [keyword.lower() for keyword in BROWSER_WINDOW_KEYWORDS]
 
 
@@ -401,6 +402,9 @@ class BrowserFocusController:
         with contextlib.suppress(Exception):
             if getattr(window, "isMinimized", False):
                 window.restore()
+            # Ensure window is maximized after activation
+            if hasattr(window, "maximize"):
+                window.maximize()
             window.activate()
             self._record_activation(window)
             time.sleep(0.25)
@@ -519,7 +523,7 @@ class BrowserFocusController:
         for hwnd in handles:
             if _ShowWindow is not None:
                 with contextlib.suppress(Exception):
-                    _ShowWindow(hwnd, _SW_RESTORE)
+                    _ShowWindow(hwnd, _SW_MAXIMIZE)
             if _SetForegroundWindow is not None:
                 with contextlib.suppress(Exception):
                     if _SetForegroundWindow(hwnd):

@@ -254,6 +254,7 @@ class MainWindow(QMainWindow):
         self._automation_service.automation_started.connect(self._on_process_started)
         self._automation_service.automation_finished.connect(self._on_process_finished)
         self._automation_service.telemetry_event.connect(self._on_telemetry_event)
+        self._automation_service.log_pause_request.connect(self._on_log_pause_request)
 
         self._log_manager.entry_added.connect(self._on_log_entry_added)
         self._log_manager.log_cleared.connect(self._on_log_cleared)
@@ -294,6 +295,8 @@ class MainWindow(QMainWindow):
         self._default_taskbar_slot = slot_choice
 
         self._user_requested_stop = False
+        if not self._start_new_log_session(script_name):
+            return
         config = AutomationRunConfig(
             script_path=script_path,
             tab_index=tab_choice,
@@ -307,9 +310,11 @@ class MainWindow(QMainWindow):
                 "Execução em andamento",
                 "Já existe uma automação em execução no momento.",
             )
+            self._log_manager.abort_session(delete_file=True)
+            self._current_log_path = None
+            self._update_log_buttons(False)
             return
 
-        self._start_new_log_session(script_name)
         self._current_script = script_path
         self._current_script_label = self._friendly_script_label(script_path)
         self._set_running_state(True)
@@ -483,6 +488,12 @@ class MainWindow(QMainWindow):
             bool(self._current_log_path and self._current_log_path.exists())
         )
 
+    def _on_log_pause_request(self, pause: bool) -> None:
+        if pause:
+            self._log_manager.pause_logging()
+        else:
+            self._log_manager.resume_logging()
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
@@ -588,10 +599,11 @@ class MainWindow(QMainWindow):
         if hasattr(self, "settings_panel"):
             self.settings_panel.setEnabled(not running)
 
-    def _start_new_log_session(self, script_name: str) -> None:
+    def _start_new_log_session(self, script_name: str) -> bool:
         path = self._log_manager.start_session(script_name)
         self._current_log_path = path
         self._update_log_buttons(path is not None)
+        return path is not None
 
     def _append_log(self, message: str) -> None:
         self._log_manager.append_line(message)
@@ -761,4 +773,10 @@ class MainWindow(QMainWindow):
         ProgressManager.reset(str(self.progress_file))
         self._apply_idle_progress_state()
         self._progress_overlay.close()
+        # Ensure log manager flushes buffers and stops writer thread cleanly
+        try:
+            if hasattr(self, "_log_manager") and self._log_manager is not None:
+                self._log_manager.shutdown()
+        except Exception:
+            pass
         super().closeEvent(event)
