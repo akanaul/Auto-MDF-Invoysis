@@ -1,4 +1,15 @@
-"""Reusable UI helpers for the Auto MDF control center."""
+"""Reusable UI helpers for the Auto MDF control center.
+
+Guia de edição (resumido)
+- Modificável pelo usuário:
+    - Pequenas adaptações visuais, temas e estilização leve.
+- Requer atenção:
+    - Mudanças que alterem contratos de sinal/slot ou APIs de componentes podem quebrar consumidores.
+- Apenas para devs:
+    - Reescrever componentes para suportar novos padrões ou dependências externas.
+
+Veja `docs/EDIT_GUIDELINES.md` para regras e exemplos.
+"""
 
 from __future__ import annotations
 

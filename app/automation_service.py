@@ -1,4 +1,16 @@
-"""High-level automation coordinator bridging GUI and runner."""
+"""High-level automation coordinator bridging GUI and runner.
+
+Guia de edição (resumido)
+- Modificável pelo usuário:
+    - Configurações de tempo e variáveis que vêm de `data.automation_settings` através da interface pública.
+- Requer atenção:
+    - Alterações que afetem como scripts são executados, gestão de tentativas (retries) e integração com foco do navegador.
+    - Mudanças erradas aqui podem fazer automações falharem silenciosamente; teste com scripts locais.
+- Apenas para devs:
+    - Reescrever o modelo de execução, sinais Qt críticos, e interface entre runner e GUI.
+
+Veja `docs/EDIT_GUIDELINES.md` para regras e exemplos.
+"""
 
 from __future__ import annotations
 

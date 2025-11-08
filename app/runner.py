@@ -1,4 +1,16 @@
-"""Infrastructure for running automation scripts in a background thread."""
+"""Infrastructure for running automation scripts in a background thread.
+
+Guia de edição (resumido)
+- Modificável pelo usuário:
+    - Scripts a serem executados (ex.: `scripts/`) e parâmetros passados ao runner.
+- Requer atenção:
+    - Alterações em como processos são spawnados, mensagens via bridge, timeouts e locks podem afetar estabilidade.
+    - Teste exaustivamente com scripts reais após qualquer alteração.
+- Apenas para devs:
+    - Reescrita do modelo de comunicação bridge, uso de pipes e tratamento do subprocesso em diferentes OS.
+
+Veja `docs/EDIT_GUIDELINES.md` para regras e exemplos.
+"""
 
 from __future__ import annotations
 

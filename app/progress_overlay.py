@@ -1,4 +1,15 @@
-"""Compact always-on-top overlay that mirrors automation progress."""
+"""Compact always-on-top overlay that mirrors automation progress.
+
+Guia de edição (resumido)
+- Modificável pelo usuário:
+    - Textos exibidos no overlay e pequenas preferências visuais.
+- Requer atenção:
+    - Mudanças que afetem atributos de janela e flags podem impactar comportamento em diferentes sistemas operacionais.
+- Apenas para devs:
+    - Alterações profundas na lógica de posicionamento, performance de atualização e integração com o gerenciador de progresso.
+
+Veja `docs/EDIT_GUIDELINES.md` para regras e exemplos.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,16 @@
-"""Centralized logging utilities for the Auto MDF control center."""
+"""Centralized logging utilities for the Auto MDF control center.
+
+Guia de edição (resumido)
+- Modificável pelo usuário:
+    - Parâmetros de logs como `LOG_MAX_LINES` e diretório de `LOGS_DIR` (preferencialmente via `app/constants.py`).
+- Requer atenção:
+    - Mudanças no código de escrita em disco, filas de escrita, threads de I/O e flush podem causar perda de logs ou bloqueio da UI.
+    - Teste localmente em cenários de alta carga antes de commitar.
+- Apenas para devs:
+    - Reescrever a arquitetura de buffering, threads e gerenciamento de sessão de logs.
+
+Veja `docs/EDIT_GUIDELINES.md` para regras e exemplos.
+"""
 
 from __future__ import annotations
 

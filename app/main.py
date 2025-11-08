@@ -1,4 +1,15 @@
-"""Application entry point for the PySide6 Auto MDF control center."""
+"""Application entry point for the PySide6 Auto MDF control center.
+
+Guia de edição (resumido)
+- Modificável pelo usuário:
+    - Parâmetros de execução (ex.: caminho do interpretador passado a `run`).
+- Requer atenção:
+    - Alterações no fluxo de inicialização do QApplication ou variáveis de ambiente podem afetar toda a UI.
+- Apenas para devs:
+    - Mudanças em inicialização profunda do Qt, gerenciamento de eventos e integração com o loop principal.
+
+Veja `docs/EDIT_GUIDELINES.md` para regras e exemplos.
+"""
 
 from __future__ import annotations
 

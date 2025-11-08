@@ -1,4 +1,15 @@
-"""Main window for the modern Auto MDF automation control center."""
+"""Main window for the modern Auto MDF automation control center.
+
+Guia de edição (resumido)
+- Modificável pelo usuário:
+    - Textos da interface, atalhos e preferências exibidas no painel de configurações.
+- Requer atenção:
+    - Mudanças em handlers de eventos, threads de UI e manipulação de widgets podem causar travamentos ou perda de estado.
+- Apenas para devs:
+    - Alterações profundas na arquitetura da janela principal, ciclo de vida do aplicativo e integrações com backend.
+
+Veja `docs/EDIT_GUIDELINES.md` para regras e exemplos.
+"""
 # sourcery skip: all
 
 from __future__ import annotations
