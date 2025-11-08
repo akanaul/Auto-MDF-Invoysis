@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib
 import os
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Optional
 
 ROOT_DIR = Path(__file__).resolve().parent
-TOOLS_DIR = ROOT_DIR / "tools"
+INSTALL_DIR = ROOT_DIR / "install"
 LOGS_DIR = ROOT_DIR / "logs"
 VENV_DIR = ROOT_DIR / ".venv"
 REQUIRED_GUI_MODULES = ("PySide6",)
@@ -60,10 +61,16 @@ def _ensure_virtualenv() -> Path:
     result = subprocess.run(command, capture_output=True, text=True, check=False)
 
     log_path.write_text(
-        "Comando: " + " ".join(command) + "\n" +
-        "Código de saída: " + str(result.returncode) + "\n" +
-        "--- STDOUT ---\n" + result.stdout +
-        "\n--- STDERR ---\n" + result.stderr,
+        "Comando: "
+        + " ".join(command)
+        + "\n"
+        + "Código de saída: "
+        + str(result.returncode)
+        + "\n"
+        + "--- STDOUT ---\n"
+        + result.stdout
+        + "\n--- STDERR ---\n"
+        + result.stderr,
         encoding="utf-8",
     )
 
@@ -91,47 +98,107 @@ def _relaunch_inside_venv(venv_python: Path) -> None:
     os.execv(str(venv_python), args)
 
 
+MANUAL_INSTALL_HINT = (
+    "Para tentar novamente manualmente:\n"
+    "  1. Abra a pasta 'install' na raiz do projeto.\n"
+    "  2. No Windows, execute 'install\\install.bat' (ambiente .venv) ou 'install\\install_user.bat'.\n"
+    "  3. Após concluir, execute novamente o AutoMDF-Start."
+)
+
+
+def _build_install_error_details(stdout_combined: str) -> list[str]:
+    details = []
+    if "no matching distribution found for pyside6" in stdout_combined:
+        details.append(
+            "A versão atual do Python não possui builds compatíveis do PySide6. "
+            "Instale Python 3.12 (ou 3.11/3.10) e execute novamente o instalador."
+        )
+    return details
+
+
+def _build_missing_modules_details(missing_modules: list[str]) -> str:
+    return ", ".join(missing_modules) + "\n\n" + MANUAL_INSTALL_HINT
+
+
 def _install_dependencies(python_executable: Path) -> Path:
-    install_script = TOOLS_DIR / "install.py"
+    install_script = INSTALL_DIR / "install.py"
     if not install_script.exists():
-        raise FileNotFoundError(f"Arquivo de instalação não encontrado: {install_script}")
+        raise FileNotFoundError(
+            f"Arquivo de instalação não encontrado: {install_script}"
+        )
 
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
     log_path = LOGS_DIR / "startup-install.log"
 
     command = [
         str(python_executable),
+        "-u",
         str(install_script),
         "--mode",
         "venv",
         "--venv-path",
         str(VENV_DIR),
     ]
-    result = subprocess.run(command, capture_output=True, text=True, check=False)
 
-    log_path.write_text(
-        "Comando: " + " ".join(command) + "\n" +
-        "Código de saída: " + str(result.returncode) + "\n" +
-        "--- STDOUT ---\n" + result.stdout +
-        "\n--- STDERR ---\n" + result.stderr,
-        encoding="utf-8",
-    )
+    env = os.environ.copy()
+    env.setdefault("PYTHONUNBUFFERED", "1")
 
-    if result.returncode != 0:
-        details = []
-        stderr_lower = result.stderr.lower()
-        if "no matching distribution found for pyside6" in stderr_lower:
-            details.append(
-                "A versão atual do Python não possui builds compatíveis do PySide6. "
-                "Instale Python 3.12 (ou 3.11/3.10) e execute novamente o instalador."
-            )
+    print("Iniciando instalação automática das dependências...", flush=True)
+
+    log_lines: list[str] = []
+
+    with subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        env=env,
+    ) as process:
+        assert process.stdout is not None
+        for raw_line in process.stdout:
+            sys.stdout.write(raw_line)
+            sys.stdout.flush()
+            log_lines.append(raw_line)
+        returncode = process.wait()
+
+    _write_install_log(log_path, command, log_lines, returncode)
+
+    if returncode != 0:
+        stdout_combined = "".join(log_lines).lower()
+        details = _build_install_error_details(stdout_combined)
+        print(
+            "\nA instalação automática falhou. Consulte o log e siga as instruções abaixo:",
+            flush=True,
+        )
+        print(f"  - Log: {log_path}", flush=True)
+        print(MANUAL_INSTALL_HINT, flush=True)
+        details.append(MANUAL_INSTALL_HINT)
         raise DependencyInstallationError(
             "Falha ao instalar dependências automaticamente.",
             log_path,
             "\n".join(details),
         )
 
+    print("Instalação automática concluída com sucesso.\n", flush=True)
     return log_path
+
+
+def _write_install_log(
+    log_path: Path, command: list[str], lines: list[str], returncode: Optional[int]
+) -> None:
+    quoted_command = " ".join(
+        f'"{part}"' if " " in str(part) else str(part) for part in command
+    )
+    header = [
+        f"Comando: {quoted_command}",
+        f"Código de saída: {'' if returncode is None else returncode}",
+        "--- STDOUT/STDERR ---",
+    ]
+    log_payload = "\n".join(header) + "\n" + "".join(lines)
+
+    with contextlib.suppress(Exception):
+        log_path.write_text(log_payload, encoding="utf-8")
 
 
 def ensure_gui_dependencies(python_executable: Path) -> None:
@@ -139,13 +206,24 @@ def ensure_gui_dependencies(python_executable: Path) -> None:
     if not missing:
         return
 
+    print("Dependências críticas ausentes: " + ", ".join(missing), flush=True)
+    print("Executando instalação automática via pip...", flush=True)
+
     log_path = _install_dependencies(python_executable)
 
+    print(f"Logs da instalação gravados em: {log_path}", flush=True)
+
     if still_missing := _missing_modules(REQUIRED_GUI_MODULES):
+        print(
+            "Instalação automática concluída, mas ainda faltam dependências críticas.",
+            flush=True,
+        )
+        print(MANUAL_INSTALL_HINT, flush=True)
+        details = _build_missing_modules_details(still_missing)
         raise DependencyInstallationError(
             "Dependências críticas continuam ausentes após a instalação automática:",
             log_path,
-            ", ".join(still_missing),
+            details,
         )
 
 
@@ -186,7 +264,9 @@ def main() -> int:
         try:
             _relaunch_inside_venv(venv_python)
         except Exception as exc:  # pragma: no cover - exec failure
-            _show_startup_error(f"Não foi possível reiniciar dentro do ambiente virtual: {exc}")
+            _show_startup_error(
+                f"Não foi possível reiniciar dentro do ambiente virtual: {exc}"
+            )
             return 1
         return 0  # os.execv não retorna; este é apenas por segurança
 

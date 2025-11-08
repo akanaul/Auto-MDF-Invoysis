@@ -1,9 +1,9 @@
-"""Shared browser focus helpers for MDF automation scripts.
+"""Utilitários compartilhados para manter o foco do navegador nos scripts MDF.
 
-This module centralizes the logic required to keep the target browser window
-active during automation runs. It consolidates duplicated focus-management
-code from the individual automation scripts, making maintenance easier and
-reducing the chance of divergence between implementations.
+Este módulo centraliza a lógica necessária para manter a janela do navegador
+ativa durante as execuções de automação. Ele consolida trechos duplicados de
+foco presentes em scripts individuais, facilitando a manutenção e reduzindo a
+chance de divergências entre implementações.
 """
 
 from __future__ import annotations
@@ -68,7 +68,11 @@ BROWSER_KEYWORDS_LOWER = [keyword.lower() for keyword in BROWSER_WINDOW_KEYWORDS
 
 
 class BrowserFocusController:
-    """Tracks and restores focus to the configured browser window."""
+    """Acompanha e restaura o foco para a janela de navegador configurada."""
+
+    # Seguro ajustar: palavras-chave padrão ou lógica de resolução do slot na barra de tarefas.
+    # Requer atenção: constantes de tempo e troca de abas — valide nos sistemas operacionais suportados.
+    # Apenas para devs: chamadas à API Win32 e heurísticas de foco; erros podem deixar a automação sem controle.
 
     def __init__(self) -> None:
         self._target_tab = self._resolve_target_tab()
@@ -90,7 +94,7 @@ class BrowserFocusController:
         self._force_tab_on_focus = True
 
     def prepare_for_execution(self) -> None:
-        """Reset state prior to running an automation script."""
+        """Reinicia o estado antes de executar um script de automação."""
         self._target_tab = self._resolve_target_tab()
         self._preferred_title = self._resolve_preferred_title()
         self.last_browser_window = None
@@ -101,7 +105,7 @@ class BrowserFocusController:
         self._taskbar_slot = self._resolve_taskbar_slot()
 
     def prepare_taskbar_retry(self) -> None:
-        """Allow a new Win+1 attempt when focus returns to the GUI."""
+        """Permite uma nova tentativa de Win+1 quando o foco volta para a GUI."""
         title = self._active_window_title().lower()
         if not title:
             return
@@ -111,7 +115,7 @@ class BrowserFocusController:
             self.last_taskbar_launch = 0.0
 
     # ------------------------------------------------------------------
-    # Public API
+    # API pública
     # ------------------------------------------------------------------
     def ensure_browser_focus(
         self,
@@ -120,7 +124,7 @@ class BrowserFocusController:
         switch_to_target_tab: Optional[bool] = None,
         preserve_tab: bool = False,
     ) -> bool:
-        """Guarantee the browser window is focused."""
+        """Garante que a janela do navegador esteja em foco."""
         explicit_switch = switch_to_target_tab is not None
         if switch_to_target_tab is None:
             switch_to_target_tab = not preserve_tab
@@ -146,7 +150,9 @@ class BrowserFocusController:
                     self._switch_to_target_tab()
                 return True
 
-            if self._is_gui_window(active) and self._activate_browser_window(should_switch_tab):
+            if self._is_gui_window(active) and self._activate_browser_window(
+                should_switch_tab
+            ):
                 return True
 
         if self._activate_browser_window(should_switch_tab):
@@ -158,10 +164,12 @@ class BrowserFocusController:
         return False
 
     def ensure_browser_focus_if_gui_active(self) -> bool:
-        """Restore browser focus only when the GUI currently owns the focus."""
+        """Restaura o foco do navegador apenas quando a GUI estiver ativa."""
         if not self._is_gui_active():
             return False
-        success = self.ensure_browser_focus(allow_taskbar=False, switch_to_target_tab=False)
+        success = self.ensure_browser_focus(
+            allow_taskbar=False, switch_to_target_tab=False
+        )
         if success:
             self.wait_until_browser_active(force_tab=False)
         return success
@@ -176,7 +184,7 @@ class BrowserFocusController:
         return self._is_gui_window(active)
 
     def launch_taskbar_slot(self, wait: float = 0.6) -> bool:
-        """Bring Microsoft Edge to the foreground using the configured taskbar slot."""
+        """Traz o Microsoft Edge para frente usando o slot configurado na barra de tarefas."""
         if self._is_browser_active():
             self.taskbar_launched = True
             return True
@@ -193,7 +201,7 @@ class BrowserFocusController:
         return launched
 
     # ------------------------------------------------------------------
-    # Internal helpers
+    # Auxiliares internos
     # ------------------------------------------------------------------
     @staticmethod
     def _normalize_tab(value: Any) -> int:
@@ -201,9 +209,7 @@ class BrowserFocusController:
             numeric = int(value)
         except (TypeError, ValueError):
             return 0
-        if numeric <= 0:
-            return 0
-        return min(numeric, 9)
+        return min(numeric, 9) if numeric > 0 else 0
 
     @staticmethod
     def _resolve_target_tab() -> int:
@@ -220,13 +226,13 @@ class BrowserFocusController:
             numeric = int(value)
         except (TypeError, ValueError):
             return 1
-        if numeric <= 0:
-            return 1
-        return min(numeric, 9)
+        return min(numeric, 9) if numeric > 0 else 1
 
     @staticmethod
     def _resolve_taskbar_slot() -> int:
-        raw = os.environ.get("MDF_BROWSER_TASKBAR_SLOT", "") or os.environ.get("MDF_EDGE_TASKBAR_SLOT", "")
+        raw = os.environ.get("MDF_BROWSER_TASKBAR_SLOT", "") or os.environ.get(
+            "MDF_EDGE_TASKBAR_SLOT", ""
+        )
         return BrowserFocusController._normalize_taskbar_slot(raw or 1)
 
     def _is_browser_window(self, window) -> bool:
@@ -236,8 +242,7 @@ class BrowserFocusController:
         return self._matches_keywords(window, GUI_WINDOW_KEYWORDS)
 
     def _is_browser_active(self) -> bool:
-        title = self._active_window_title().lower()
-        if not title:
+        if not (title := self._active_window_title().lower()):
             return False
         return any(keyword in title for keyword in BROWSER_KEYWORDS_LOWER)
 
@@ -247,10 +252,13 @@ class BrowserFocusController:
                 window = gw.getActiveWindow()
                 if window and getattr(window, "title", None):
                     return str(window.title)
-        if _GetForegroundWindow is not None and _GetWindowTextLengthW is not None and _GetWindowTextW is not None:
+        if (
+            _GetForegroundWindow is not None
+            and _GetWindowTextLengthW is not None
+            and _GetWindowTextW is not None
+        ):
             with contextlib.suppress(Exception):
-                hwnd = _GetForegroundWindow()
-                if hwnd:
+                if hwnd := _GetForegroundWindow():
                     length = _GetWindowTextLengthW(hwnd)
                     if length > 0:
                         buffer = ctypes.create_unicode_buffer(length + 1)
@@ -354,10 +362,12 @@ class BrowserFocusController:
         *,
         force_tab: Optional[bool] = None,
     ) -> bool:
-        """Wait until the browser window becomes the foreground window."""
+        """Espera o navegador se tornar a janela em primeiro plano."""
         if gw is None:
             return True
-        should_switch = self._force_tab_on_focus if force_tab is None else bool(force_tab)
+        should_switch = (
+            self._force_tab_on_focus if force_tab is None else bool(force_tab)
+        )
         end_time = time.time() + max(0.0, timeout)
         while time.time() < end_time:
             if self._is_browser_window(self._get_active_window()):
@@ -377,7 +387,7 @@ class BrowserFocusController:
         ensure_focus: bool = True,
         allow_taskbar: bool = True,
     ) -> bool:
-        """Switch the active browser to the given tab, optionally restoring focus."""
+        """Troca o navegador ativo para a aba informada, restaurando foco se necessário."""
 
         normalized = self._normalize_tab(tab)
         if normalized <= 0:
@@ -402,7 +412,7 @@ class BrowserFocusController:
         with contextlib.suppress(Exception):
             if getattr(window, "isMinimized", False):
                 window.restore()
-            # Ensure window is maximized after activation
+            # Garante que a janela esteja maximizada após a ativação
             if hasattr(window, "maximize"):
                 window.maximize()
             window.activate()
@@ -437,7 +447,7 @@ class BrowserFocusController:
         return False
 
     # ------------------------------------------------------------------
-    # Preferences
+    # Preferências
     # ------------------------------------------------------------------
     def list_window_titles(self) -> list[str]:
         titles: set[str] = set()

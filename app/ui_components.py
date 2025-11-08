@@ -1,4 +1,4 @@
-"""Reusable UI helpers for the Auto MDF control center.
+"""Componentes reutilizáveis de UI para o centro de controle do Auto MDF.
 
 Guia de edição (resumido)
 - Modificável pelo usuário:
@@ -47,7 +47,11 @@ if TYPE_CHECKING:
 
 
 class AutomationLogView(QPlainTextEdit):
-    """Read-only log viewer with level-aware formatting."""
+    """Visualizador de logs somente leitura com formatação por nível."""
+
+    # Seguro ajustar: fontes, cores e comportamento de seguir o final.
+    # Requer atenção: ajustar o limite máximo de blocos — considere o impacto em memória.
+    # Apenas para devs: alterar a lógica de renderização/append; mantenha alinhado ao LogEntry.
 
     _LEVEL_COLORS = {
         "DEBUG": QColor("#7f8c8d"),
@@ -96,7 +100,11 @@ class AutomationLogView(QPlainTextEdit):
 
 
 class ProgressPanel(QWidget):
-    """Composite widget with a status label and progress bar."""
+    """Widget composto com rótulo de status e barra de progresso."""
+
+    # Seguro ajustar: texto do rótulo, formato da barra de progresso e espaçamentos.
+    # Requer atenção: pressupostos de faixa/valor — a UI espera 0-100.
+    # Apenas para devs: substituir a barra por outros widgets (afeta expectativas da MainWindow).
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -134,7 +142,11 @@ class ProgressPanel(QWidget):
 
 
 class LogConsole(QWidget):
-    """Dedicated log console with filters and contextual actions."""
+    """Console dedicado de logs com filtros e ações contextuais."""
+
+    # Seguro ajustar: layout, rótulos dos botões e textos de placeholder.
+    # Requer atenção: lógica de filtragem e emissão de sinais — garanta compatibilidade com o LogManager.
+    # Apenas para devs: alterar como as entradas são armazenadas/aplicadas; outros módulos dependem de set_log_manager.
 
     request_export = Signal()
     request_open = Signal()
@@ -258,11 +270,11 @@ class LogConsole(QWidget):
 
     def _entry_matches(self, entry: "LogEntry") -> bool:
         selected_level = self.level_combo.currentData()
-        if selected_level != "ALL" and entry.level.upper() != selected_level:
-            return False
-        if self._search_term and self._search_term not in entry.display.lower():
-            return False
-        return True
+        level_matches = selected_level == "ALL" or entry.level.upper() == selected_level
+        search_matches = (
+            not self._search_term or self._search_term in entry.display.lower()
+        )
+        return level_matches and search_matches
 
     def _set_status(self, message: str, *, error: bool = False) -> None:
         color = "#ec7063" if error else "#7f8c8d"
@@ -277,7 +289,11 @@ class LogConsole(QWidget):
 
 
 class AutomationSettingsPanel(QGroupBox):
-    """Expose runtime knobs for the automation stack."""
+    """Exibe ajustes de tempo de execução para a stack de automação."""
+
+    # Seguro ajustar: rótulos, tooltips, faixas das spin boxes e estado padrão do checkbox.
+    # Requer atenção: ligações de sinais e a estrutura de `apply_settings/current_settings`.
+    # Apenas para devs: adicionar novas abas ou campos de persistência — mantenha alinhado ao AutomationSettings.
 
     settings_changed = Signal(object)
 
@@ -595,6 +611,7 @@ class AutomationSettingsPanel(QGroupBox):
         self._tabs.addTab(tab, "Temporizadores")
 
     def _make_row(self, label_text: str, widget: QWidget) -> QHBoxLayout:
+        """Monta uma linha horizontal rotulada para o formulário de ajustes."""
         row = QHBoxLayout()
         label = QLabel(label_text)
         label.setWordWrap(True)
@@ -604,16 +621,19 @@ class AutomationSettingsPanel(QGroupBox):
         return row
 
     def _apply_timer_override_state(self, use_defaults: bool) -> None:
+        """Trava os controles de temporizadores quando os padrões de script estão ativos."""
         for widget in self._timer_groups:
             widget.setEnabled(not use_defaults)
         self._timer_warning_label.setVisible(not use_defaults)
 
     def _on_use_default_timers_toggled(self, checked: bool) -> None:
+        """Sincroniza o checkbox com a UI e emite as configurações atualizadas."""
         self._apply_timer_override_state(checked)
         self._update_timer_hints()
         self.settings_changed.emit(self.current_settings())
 
     def _update_timer_hints(self) -> None:
+        """Renova os textos de ajuda para refletir limites e multiplicadores."""
         short_threshold = float(self._short_threshold_spin.value())
         medium_threshold = float(self._medium_threshold_spin.value())
         short_scale = float(self._short_scale_spin.value())

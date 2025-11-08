@@ -1,4 +1,4 @@
-"""Dialog service providing bridge-aware Qt dialogs for automation scripts."""
+"""Serviço de diálogos Qt ciente do bridge para scripts de automação."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ if TYPE_CHECKING:  # pragma: no cover - type hints only
 
 
 class DialogService:
-    """Expose alert/prompt/confirm dialogs with GUI bridge integration."""
+    """Expõe diálogos de alerta/prompt/confirmação integrados ao bridge da GUI."""
 
     _qt_core_exit_wrapped = False
     _qt_eventloop_exit_wrapped = False
@@ -46,7 +46,7 @@ class DialogService:
         )
 
     # ------------------------------------------------------------------
-    # Qt helpers
+    # Auxiliares Qt
     # ------------------------------------------------------------------
     def _ensure_qapp(self) -> Any:
         from PySide6.QtWidgets import QApplication
@@ -58,12 +58,16 @@ class DialogService:
                 app.setQuitOnLastWindowClosed(False)
             self._log("QApplication criado para fallback Qt.", level="debug")
         else:
-            self._log("Reutilizando QApplication existente para fallback Qt.", level="debug")
+            self._log(
+                "Reutilizando QApplication existente para fallback Qt.", level="debug"
+            )
         self._install_qt_diagnostics(app)
         self._qt_app = app
         return app
 
-    def _resolve_parent(self, explicit_parent: Optional["QWidget"]) -> Optional["QWidget"]:
+    def _resolve_parent(
+        self, explicit_parent: Optional["QWidget"]
+    ) -> Optional["QWidget"]:
         if explicit_parent is not None:
             return explicit_parent
         if self._parent_provider is None:
@@ -116,7 +120,7 @@ class DialogService:
             self._log("Loop modal do diálogo Qt finalizado.")
 
     def _install_qt_diagnostics(self, app: Any) -> None:
-        """Install hooks once to track unexpected Qt exits."""
+        """Instala hooks uma única vez para monitorar saídas inesperadas do Qt."""
 
         if getattr(self, "_qt_hooks_installed", False):
             return
@@ -130,7 +134,9 @@ class DialogService:
             original_exit = QCoreApplication.exit
 
             def logged_exit(code: int = 0) -> None:
-                DialogService._log(f"QCoreApplication.exit({code}) chamado.", level="warning")
+                DialogService._log(
+                    f"QCoreApplication.exit({code}) chamado.", level="warning"
+                )
                 return original_exit(code)
 
             QCoreApplication.exit = staticmethod(logged_exit)  # type: ignore[assignment]
@@ -140,19 +146,25 @@ class DialogService:
             original_loop_exit = QEventLoop.exit
 
             def logged_loop_exit(loop_self: Any, return_code: int = 0) -> None:
-                DialogService._log(f"QEventLoop.exit({return_code}) chamado.", level="warning")
+                DialogService._log(
+                    f"QEventLoop.exit({return_code}) chamado.", level="warning"
+                )
                 return original_loop_exit(loop_self, return_code)
 
             QEventLoop.exit = logged_loop_exit  # type: ignore[assignment]
             DialogService._qt_eventloop_exit_wrapped = True
 
         with contextlib.suppress(Exception):
-            app.aboutToQuit.connect(lambda: DialogService._log("QApplication.aboutToQuit emitido.", level="warning"))
+            app.aboutToQuit.connect(
+                lambda: DialogService._log(
+                    "QApplication.aboutToQuit emitido.", level="warning"
+                )
+            )
 
         self._qt_hooks_installed = True
 
     def is_modal_active(self) -> bool:
-        """Return True while a Qt modal dialog is running."""
+        """Retorna True enquanto um diálogo Qt modal estiver aberto."""
 
         return self._active_modal_count > 0
 
@@ -188,7 +200,9 @@ class DialogService:
         class _PromptDialog(QDialog):
             def __init__(self) -> None:
                 super().__init__(parent_widget)
-                service._log("Instanciando QDialog fallback para prompt.", level="debug")
+                service._log(
+                    "Instanciando QDialog fallback para prompt.", level="debug"
+                )
                 self._allow_cancel = allow_cancel
                 self._cancel_message = cancel_message
                 self._explicit_close = False
@@ -208,14 +222,17 @@ class DialogService:
                             self,
                             "Cancelar entrada",
                             self._cancel_message,
-                            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                            QMessageBox.StandardButton.Yes
+                            | QMessageBox.StandardButton.No,
                             QMessageBox.StandardButton.No,
                         )
                     if answer != QMessageBox.StandardButton.Yes:
                         self._schedule_reactivation("cancel_declined")
                         return
                 result["value"] = None
-                service._log("Prompt Qt rejeitado pelo usuário/cancelamento.", level="debug")
+                service._log(
+                    "Prompt Qt rejeitado pelo usuário/cancelamento.", level="debug"
+                )
                 self._explicit_close = True
                 super().reject()
 
@@ -269,19 +286,30 @@ class DialogService:
                     )
                     yield
                 finally:
-                    self._reactivation_block_count = max(0, self._reactivation_block_count - 1)
+                    self._reactivation_block_count = max(
+                        0, self._reactivation_block_count - 1
+                    )
 
             def event(self, event) -> bool:  # type: ignore[override]
                 try:
                     event_type = int(getattr(event, "type")())
                 except Exception:
                     event_type = -1
-                if event_type in {QEvent.Type.Hide, QEvent.Type.HideToParent} and not self._explicit_close:
-                    service._log("Prompt Qt bloqueou hide automático; reexibindo diálogo.", level="debug")
+                if (
+                    event_type in {QEvent.Type.Hide, QEvent.Type.HideToParent}
+                    and not self._explicit_close
+                ):
+                    service._log(
+                        "Prompt Qt bloqueou hide automático; reexibindo diálogo.",
+                        level="debug",
+                    )
                     event.ignore()
                     self._schedule_reactivation("hide")
                     return True
-                if event_type in {QEvent.Type.WindowDeactivate, QEvent.Type.FocusOut} and not self._explicit_close:
+                if (
+                    event_type in {QEvent.Type.WindowDeactivate, QEvent.Type.FocusOut}
+                    and not self._explicit_close
+                ):
                     self._schedule_reactivation("deactivate")
                 return super().event(event)
 
@@ -290,7 +318,9 @@ class DialogService:
                     event_type = int(getattr(event, "type")())
                 except Exception:
                     event_type = -1
-                service._log(f"Prompt Qt changeEvent recebido: type={event_type}.", level="debug")
+                service._log(
+                    f"Prompt Qt changeEvent recebido: type={event_type}.", level="debug"
+                )
                 super().changeEvent(event)
 
         dialog = _PromptDialog()
@@ -308,7 +338,9 @@ class DialogService:
             self._log("Prompt Qt sinal rejected disparado.", level="debug")
 
         def on_dialog_finished(code: int) -> None:
-            self._log(f"Prompt Qt sinal finished disparado com code={code}.", level="debug")
+            self._log(
+                f"Prompt Qt sinal finished disparado com code={code}.", level="debug"
+            )
 
         dialog.accepted.connect(on_dialog_accepted)
         dialog.rejected.connect(on_dialog_rejected)
@@ -381,7 +413,9 @@ class DialogService:
 
         visible_after = dialog.isVisible()
         current_result = dialog.result()
-        delete_on_close = dialog.testAttribute(_QtAlias.WidgetAttribute.WA_DeleteOnClose)
+        delete_on_close = dialog.testAttribute(
+            _QtAlias.WidgetAttribute.WA_DeleteOnClose
+        )
         self._log(
             "Prompt Qt finalizou com dialog_result="
             f"{dialog_result} e valor={result['value']!r}. (visible={visible_after}, result_property={current_result},"
@@ -475,7 +509,7 @@ class DialogService:
         return trimmed or None
 
     # ------------------------------------------------------------------
-    # Bridge helpers
+    # Auxiliares do bridge
     # ------------------------------------------------------------------
     def _send_bridge_payload(self, payload: dict[str, Any]) -> None:
         self._log(f"Enviando payload para bridge: {payload.get('type')}.")
@@ -500,7 +534,10 @@ class DialogService:
             self._log(f"Resposta recebida do bridge: {response}")
             return response
         except Exception:
-            self._log("Exceção ao comunicar com a bridge; acionando fallback Qt.", level="error")
+            self._log(
+                "Exceção ao comunicar com a bridge; acionando fallback Qt.",
+                level="error",
+            )
             return None, False
 
     # ------------------------------------------------------------------
@@ -517,7 +554,7 @@ class DialogService:
         cancel_message: str,
         on_restore_focus: Optional[Callable[[], None]] = None,
         parent: Optional["QWidget"] = None,
-    ) -> Optional[str]:
+    ) -> Optional[str]:  # sourcery skip: low-code-quality
         bridge_payload = {
             "type": "prompt",
             "text": text or "",
@@ -535,7 +572,9 @@ class DialogService:
         while True:
             response, handled = self._bridge_request(bridge_payload)
             if not handled:
-                self._log("Bridge não lidou com prompt; acionando fallback Qt.", level="info")
+                self._log(
+                    "Bridge não lidou com prompt; acionando fallback Qt.", level="info"
+                )
                 break
 
             if on_restore_focus:
@@ -544,7 +583,10 @@ class DialogService:
             if response is None:
                 if require_input and allow_cancel:
                     bridge_cancelled = True
-                    self._log("Usuário cancelou prompt via bridge enquanto entrada obrigatória.", level="warning")
+                    self._log(
+                        "Usuário cancelou prompt via bridge enquanto entrada obrigatória.",
+                        level="warning",
+                    )
                     print(
                         "[AutoMDF] Aviso: cancelamento do diálogo principal detectado. Solicitando confirmação ao operador...",
                         flush=True,
@@ -562,7 +604,10 @@ class DialogService:
                 fallback_default = response or ""
                 bridge_payload["default"] = fallback_default
                 if blank_attempts >= 2:
-                    self._log("Entrada vazia persistente; migrando para fallback Qt.", level="warning")
+                    self._log(
+                        "Entrada vazia persistente; migrando para fallback Qt.",
+                        level="warning",
+                    )
                     print(
                         "[AutoMDF] Aviso: entrada vazia recebida do diálogo principal. Alternando para modo de compatibilidade.",
                         flush=True,
@@ -578,7 +623,10 @@ class DialogService:
                 "[AutoMDF] Aviso: entrada vazia persistente no diálogo principal. Alternando para modo de compatibilidade.",
                 flush=True,
             )
-            self._log("Prompt obrigatório sem resposta; executando fallback Qt.", level="warning")
+            self._log(
+                "Prompt obrigatório sem resposta; executando fallback Qt.",
+                level="warning",
+            )
 
         self._ensure_qapp()
         value = self._show_prompt_qt(
@@ -643,7 +691,9 @@ class DialogService:
         parent: Optional["QWidget"] = None,
     ) -> Optional[str]:
         normalized = buttons or ["OK", "Cancel"]
-        normalized = [btn for btn in (str(option).strip() for option in normalized) if btn] or ["OK", "Cancel"]
+        normalized = [
+            btn for btn in (str(option).strip() for option in normalized) if btn
+        ] or ["OK", "Cancel"]
 
         response, handled = self._bridge_request(
             {
@@ -661,7 +711,9 @@ class DialogService:
                 self._log(f"Confirmação tratada pela bridge com resposta '{trimmed}'.")
                 return trimmed or response or None
             fallback = "Cancel" if "Cancel" in normalized else normalized[-1]
-            self._log("Confirmação cancelada pela bridge; retornando fallback.", level="info")
+            self._log(
+                "Confirmação cancelada pela bridge; retornando fallback.", level="info"
+            )
             return fallback
 
         self._ensure_qapp()
@@ -674,7 +726,10 @@ class DialogService:
         if on_restore_focus:
             on_restore_focus()
         if not choice:
-            self._log("Confirmação Qt encerrada sem resposta; retornando fallback.", level="warning")
+            self._log(
+                "Confirmação Qt encerrada sem resposta; retornando fallback.",
+                level="warning",
+            )
             return "Cancel" if "Cancel" in normalized else normalized[-1]
         trimmed = choice.strip()
         self._log(f"Confirmação Qt retornou '{trimmed}'.")

@@ -2,6 +2,10 @@
 
 Automação do fluxo MDF-e com uma central moderna em PySide6. A aplicação oferece um painel único para iniciar scripts, acompanhar logs e responder diálogos emitidos pelos robôs sem depender do front-end legado anterior.
 
+**📚 Documentação Completa:** Para guias detalhados de instalação, uso e solução de problemas, consulte a pasta `docs/` com documentação completa em português para usuários finais.
+
+**✨ Melhorias Recentes:** Código otimizado com type hints, tratamento de erros aprimorado, instalação automática via launcher, e documentação completa para facilitar o uso.
+
 ## Principais recursos
 
 - Janela única em PySide6 com seleção de scripts, logs em tempo real e barra de progresso.
@@ -19,24 +23,27 @@ Automação do fluxo MDF-e com uma central moderna em PySide6. A aplicação ofe
 - Acesso ao Invoisys e ao portal de averbação autenticados.
 - Permissão para instalar dependências Python (PySide6, PyAutoGUI, pyperclip, pygetwindow).
 
+## Documentação
+
+Para guias detalhados de instalação, uso e solução de problemas, consulte a pasta `docs/`:
+
+- [README da Documentação](docs/README.md) - Visão geral e links para todos os guias
+- [Instalação](docs/instalacao.md) - Guia passo-a-passo para instalar em Windows/Linux
+- [Uso](docs/uso.md) - Como usar a interface e executar automações
+- [Solução de Problemas](docs/problemas.md) - Resolução de erros comuns
+- [Perguntas Frequentes](docs/faq.md) - Respostas para dúvidas comuns
+
 ## Instalação
 
-### Windows com virtualenv (padrão)
+### Método Mais Simples (Recomendado)
 
-1. Abra o Prompt de Comando na raiz do projeto.
-2. Execute `install.bat` para criar `.venv` e instalar dependências.
-3. Inicie a GUI com `python AutoMDF-Start.py` (o launcher relança dentro da `.venv` automaticamente).
+1. Dê duplo clique no arquivo `AutoMDF-Start.py` na raiz do projeto.
+2. O launcher vai criar o ambiente virtual e instalar todas as dependências automaticamente.
+3. A interface gráfica abrirá quando tudo estiver pronto.
 
-### Windows com --user
+### Instalação Manual (Alternativa)
 
-1. Rode `install_user.bat` para instalar apenas no perfil atual.
-2. Opcionalmente crie uma `.venv` manualmente se preferir isolar o ambiente.
-
-### Linux, macOS ou Codespaces
-
-1. Torne o script executável com `chmod +x install.sh`.
-2. Execute `./install.sh`.
-3. Rode `python AutoMDF-Start.py` dentro do ambiente configurado.
+Se preferir instalar manualmente ou se o launcher encontrar problemas:
 
 ### Instalação manual
 
@@ -46,12 +53,11 @@ Automação do fluxo MDF-e com uma central moderna em PySide6. A aplicação ofe
 
 ## Início rápido
 
-1. Execute `python AutoMDF-Start.py`.
-2. Aguarde o launcher criar ou ativar a `.venv` e conferir dependências.
-3. Selecione um script da pasta `scripts/`.
-4. Clique em **Iniciar** para rodar. Use **Parar** para encerrar a execução atual.
-5. Ajuste, se necessário, as preferências na aba **Configurações** (por padrão a opção "Usar tempos padrão do script" mantém os timers originais).
-6. Utilize **Exportar Log** ou **Abrir Log** para acessar os registros em `logs/`.
+1. Dê duplo clique em `AutoMDF-Start.py` (o launcher instala tudo automaticamente na primeira execução).
+2. Selecione um script da pasta `scripts/`.
+3. Clique em **Iniciar** para rodar. Use **Parar** para encerrar a execução atual.
+4. Ajuste, se necessário, as preferências na aba **Configurações** (por padrão a opção "Usar tempos padrão do script" mantém os timers originais).
+5. Utilize **Exportar Log** ou **Abrir Log** para acessar os registros em `logs/`.
 
 ## Execução direta de scripts
 
@@ -85,8 +91,12 @@ Auto-MDF-Invoysis/
 |   |-- progress_manager.py # Persistência do progresso em JSON
 |   `-- automation_progress.json
 |-- scripts/                # Automações MDF-e (Itu, Sorocaba e outras)
-|-- tools/install.py        # Instalador unificado de dependências
-|-- install.bat / install_user.bat / install.sh
+|-- install/                # Instaladores unificados (Python, PowerShell, Bash)
+|   |-- install.py          # Lógica principal de instalação (venv/user/system)
+|   |-- install.bat         # Instalador Windows (.venv)
+|   |-- install_user.bat    # Instalador Windows (--user)
+|   |-- install.sh          # Instalador Linux/macOS
+|   `-- find_python.ps1     # Descoberta de Python 3.10+
 |-- requirements.txt
 |-- logs/
 `-- CHANGELOG.md
@@ -94,7 +104,7 @@ Auto-MDF-Invoysis/
 
 ## Dicas e solução de problemas
 
-- PySide6 não encontrado: execute `install.bat`, `install_user.bat` ou rode `python tools/install.py --mode venv`.
+- PySide6 não encontrado: execute `install\install.bat`, `install\install_user.bat` ou rode `python install/install.py --mode venv`.
 - Nenhum script listado: confirme que arquivos `.py` estão dentro de `scripts/` e que o nome termina com `.py`.
 - Logs vazios: verifique permissões de escrita em `logs/` e se o antivírus não bloqueia a pasta.
 - Erro de foco no navegador: a automação oferece suporte apenas ao Microsoft Edge. Confirme que ele está aberto e fixado na posição configurada da barra de tarefas (Win+Número). Ajuste `MDF_BROWSER_TAB` e `MDF_BROWSER_TASKBAR_SLOT` se necessário.

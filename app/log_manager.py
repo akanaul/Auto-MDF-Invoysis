@@ -14,17 +14,17 @@ Veja `docs/EDIT_GUIDELINES.md` para regras e exemplos.
 
 from __future__ import annotations
 
+import contextlib
 import re
 import unicodedata
 from collections import deque
-import contextlib
 import queue
 import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Deque, Optional
+from typing import Any, Deque, Optional, Tuple
 
 from PySide6.QtCore import QObject, Signal
 
@@ -35,9 +35,12 @@ _LOG_PATTERN = re.compile(
 )
 
 
+QueueMessage = Tuple[Any, ...]
+
+
 @dataclass(slots=True)
 class LogEntry:
-    """Structured representation of an automation log line."""
+    """Representação estruturada de uma linha de log da automação."""
 
     timestamp: datetime
     level: str
@@ -54,7 +57,11 @@ def _sanitize_script_name(raw_name: str) -> str:
 
 
 class LogManager(QObject):
-    """Manages buffered log entries and persistence to disk."""
+    """Gerencia entradas de log em memória e a persistência em disco."""
+
+    # Seguro ajustar: limites de retenção ou formato de exportação.
+    # Requer atenção: padrão de nome dos arquivos e regex de `_parse_line` — mantenha compatibilidade com os scripts.
+    # Apenas para devs: ciclo de vida da sessão, sinais ou uso da deque; demais componentes esperam o comportamento atual.
 
     entry_added = Signal(object)
     session_started = Signal(Path)
@@ -75,21 +82,21 @@ class LogManager(QObject):
         self._raw_lines: Deque[str] = deque(maxlen=max_entries)
         self._current_file: Optional[Path] = None
         self._write_failed = False
-        # Queue + worker thread for non-blocking disk writes.
-        # We buffer lines in memory and flush to disk periodically or when the
-        # buffer reaches a certain size. This reduces frequent small writes
-        # which were blocking on slow disks.
-        self._max_queue_size = int(max_queue_size) if max_queue_size and int(max_queue_size) > 0 else 10000
-        self._write_queue = queue.Queue()
+        # Fila + thread trabalhadora para escrita em disco sem bloquear a UI.
+        # As linhas ficam em memória e são descarregadas periodicamente ou quando
+        # o buffer atinge um determinado tamanho. Isso reduz escritas pequenas
+        # frequentes que travavam discos mais lentos.
+        self._max_queue_size = max_queue_size if max_queue_size > 0 else 10000
+        self._write_queue: queue.Queue[QueueMessage] = queue.Queue()
         self._queue_lock = threading.Lock()
         self._queued_items = 0
         self._pause_event = threading.Event()
-        self._pause_event.set()  # start unpaused
+        self._pause_event.set()  # inicia sem pausa
         self._dropped_lines_count = 0
         self._drop_reported = False
-        # flush parameters (configurable)
-        self._flush_interval = float(flush_interval)
-        self._flush_batch = int(flush_batch)
+        # parâmetros de flush (configuráveis)
+        self._flush_interval = flush_interval if flush_interval > 0 else 2.0
+        self._flush_batch = flush_batch if flush_batch > 0 else 200
         self._writer_thread = threading.Thread(target=self._writer_loop, daemon=True)
         self._writer_thread.start()
 
@@ -110,7 +117,7 @@ class LogManager(QObject):
         return self._write_failed
 
     def start_session(self, script_name: str) -> Optional[Path]:
-        """Prepare a new log file and clear in-memory buffers."""
+        """Prepara um novo arquivo de log e limpa os buffers em memória."""
 
         sanitized = _sanitize_script_name(script_name)
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -118,9 +125,13 @@ class LogManager(QObject):
         header = f"### Log de execução - {script_name} ###\n"
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
-        except Exception as exc:  # pragma: no cover - filesystem issues are environmental
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - filesystem issues are environmental
             self._write_failed = True
-            self.session_failed.emit(f"Não foi possível preparar o diretório de log: {exc}")
+            self.session_failed.emit(
+                f"Não foi possível preparar o diretório de log: {exc}"
+            )
             return None
 
         self._dropped_lines_count = 0
@@ -130,29 +141,27 @@ class LogManager(QObject):
         self._enqueue_message(("start_file", target, header), force=True)
 
         self._current_file = target
-        self._entries.clear()
-        self._raw_lines.clear()
+        self.clear_memory()
         self._write_failed = False
-        self.log_cleared.emit()
         self.session_started.emit(target)
         return target
 
     def clear_memory(self) -> None:
-        """Clear buffered entries without touching the on-disk log."""
+        """Limpa entradas em memória sem alterar o arquivo de log em disco."""
 
         self._entries.clear()
         self._raw_lines.clear()
         self.log_cleared.emit()
 
     def append_line(self, raw_line: str) -> LogEntry:
-        """Register a new log line coming from the automation output."""
+        """Registra uma nova linha de log proveniente da automação."""
 
         entry = self._parse_line(raw_line)
         self._entries.append(entry)
         self._raw_lines.append(entry.raw)
 
-        # Enfileira a escrita para o worker. This returns quickly and avoids
-        # blocking the caller (often the GUI thread).
+        # Enfileira a escrita para o worker; retorna rápido e evita
+        # bloquear quem chamou (geralmente a thread da GUI).
         if self._current_file is not None and not self._write_failed:
             enqueued = self._enqueue_message(("write", self._current_file, entry.raw))
             if not enqueued:
@@ -168,7 +177,7 @@ class LogManager(QObject):
         return entry
 
     def abort_session(self, *, delete_file: bool = False) -> None:
-        """Cancel the current log session, optionally removing the file."""
+        """Cancela a sessão de log atual, opcionalmente removendo o arquivo."""
 
         path = self._current_file
         if path is not None:
@@ -186,25 +195,23 @@ class LogManager(QObject):
                     path.unlink()
 
     def pause_logging(self) -> None:
-        """Pause the background writer thread temporarily."""
+        """Pausa temporariamente a thread de escrita em segundo plano."""
         self._pause_event.clear()
 
     def resume_logging(self) -> None:
-        """Resume the background writer thread."""
+        """Retoma a thread de escrita em segundo plano."""
         self._pause_event.set()
 
-    def _writer_loop(self) -> None:
-        """Worker loop that batches writes and flushes periodically.
+    def _writer_loop(self) -> None:  # sourcery skip: low-code-quality
+        """Loop do worker que agrupa escritas e realiza flush periódico.
 
-        Behavior:
-        - "start_file": set the current target path and header, do not create
-          the file immediately.
-        - "write": buffer the line in memory.
-        - "stop": force a flush and exit.
+        Comportamento:
+        - "start_file": define o caminho/arquivo atual e o cabeçalho, sem criar o arquivo imediatamente.
+        - "write": coloca a linha no buffer em memória.
+        - "stop": força um flush e encerra a thread.
 
-        The loop tries to collect multiple messages and flushes when the
-        buffer reaches `_flush_batch` or `_flush_interval` seconds pass since
-        the last flush.
+        O loop tenta juntar múltiplas mensagens e faz flush quando o buffer atinge `_flush_batch`
+        ou quando `_flush_interval` segundos passam desde o último flush.
         """
         current_path: Optional[Path] = None
         header: Optional[str] = None
@@ -213,13 +220,13 @@ class LogManager(QObject):
         running = True
         while running:
             try:
-                # Wait for a message but with timeout so we can check periodic flush
+                # Aguarda uma mensagem com timeout para permitir o flush periódico
                 msg = self._write_queue.get(timeout=self._flush_interval)
                 self._decrement_queue_size()
             except queue.Empty:
                 msg = None
 
-            # Check if paused; if so, wait until resumed
+            # Verifica se está pausado; caso positivo, espera até retomar
             if not self._pause_event.is_set():
                 time.sleep(0.1)
                 continue
@@ -227,29 +234,32 @@ class LogManager(QObject):
             if msg:
                 cmd = msg[0]
                 if cmd == "stop":
-                    # flush and exit
+                    # faz o flush e encerra
                     try:
                         if buffer and current_path is not None:
                             self._flush_buffer(current_path, header, buffer)
                     finally:
                         running = False
-                        break
+                    break
 
                 if cmd == "start_file":
                     _, path, hdr = msg
-                    # switch session: flush previous buffer first
+                    # troca de sessão: descarrega o buffer anterior antes
                     if buffer and current_path is not None:
                         self._flush_buffer(current_path, header, buffer)
                         buffer = []
                     current_path = path
                     header = hdr
                     last_flush = time.monotonic()
-                    # Force an immediate flush to create the file with header
-                    try:
-                        self._flush_buffer(current_path, header, [])
-                    except Exception as exc:
-                        self._write_failed = True
-                        self.session_failed.emit(f"Falha ao preparar arquivo de log: {exc}")
+                    # Força um flush imediato para criar o arquivo com o cabeçalho
+                    if current_path is not None:
+                        try:
+                            self._flush_buffer(current_path, header, [])
+                        except Exception as exc:
+                            self._write_failed = True
+                            self.session_failed.emit(
+                                f"Falha ao preparar arquivo de log: {exc}"
+                            )
                     continue
 
                 if cmd == "abort":
@@ -262,16 +272,17 @@ class LogManager(QObject):
 
                 if cmd == "write":
                     _, path, raw = msg
-                    # Only keep if it targets the active session
+                    # Só mantém se apontar para a sessão ativa
                     if current_path is None or path != current_path:
-                        # drop lines for old sessions
+                        # descarta linhas de sessões antigas
                         continue
                     buffer.append(raw)
 
-            # Determine if we should flush: by size or interval
+            # Decide se precisa fazer flush: por tamanho ou intervalo
             now = time.monotonic()
             if buffer and (
-                len(buffer) >= self._flush_batch or (now - last_flush) >= self._flush_interval
+                len(buffer) >= self._flush_batch
+                or (now - last_flush) >= self._flush_interval
             ):
                 try:
                     if current_path is not None:
@@ -281,22 +292,21 @@ class LogManager(QObject):
                 except Exception as exc:
                     self._write_failed = True
                     self.session_failed.emit(f"Falha ao gravar no log: {exc}")
-                    # on failure keep running but drop buffer to avoid build-up
+                    # em caso de erro continua rodando, mas descarta o buffer para evitar acúmulo
                     buffer = []
 
-        # End of loop: ensure nothing is left
+        # Final do loop: garante que nada ficou pendente
         if buffer and current_path is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self._flush_buffer(current_path, header, buffer)
-            except Exception:
-                pass
 
-    def _flush_buffer(self, path: Path, header: Optional[str], lines: list[str]) -> None:
-        """Perform the actual disk write of header+lines in a single I/O op.
+    def _flush_buffer(
+        self, path: Path, header: Optional[str], lines: list[str]
+    ) -> None:
+        """Realiza a escrita em disco do cabeçalho e linhas em uma única operação.
 
-        This function opens the target file in append or write mode depending
-        on whether the file exists. It writes the header only when creating a
-        new file.
+        Esta função abre o arquivo alvo em modo append ou write conforme a sua
+        existência. O cabeçalho é gravado apenas na criação de um novo arquivo.
         """
         try:
             exists = path.exists()
@@ -308,37 +318,36 @@ class LogManager(QObject):
                 if lines:
                     handle.write("\n")
                 handle.flush()
-            # mark write ok
+            # marca a escrita como bem-sucedida
             self._write_failed = False
         except Exception:
             raise
 
     def shutdown(self, timeout: float = 5.0) -> None:
-        """Request the writer thread to stop and wait up to `timeout` seconds.
+        """Solicita a parada da thread de escrita e aguarda até `timeout` segundos.
 
-        This ensures any buffered lines are flushed to disk before the
-        application exits. If the thread does not stop within `timeout`, it
-        will be left as a daemon thread (process exit will still terminate it).
+        Isso garante que as linhas em buffer sejam gravadas em disco antes do
+        encerramento da aplicação. Se a thread não parar dentro do `timeout`,
+        ela permanece como daemon (o fim do processo ainda a encerrará).
         """
-        try:
-            # Enqueue stop request; worker flushes buffer on stop.
+        with contextlib.suppress(Exception):
+            # Enfileira a requisição de stop; o worker faz flush ao encerrar.
             self._enqueue_message(("stop",), force=True)
             if hasattr(self, "_writer_thread") and self._writer_thread.is_alive():
                 self._writer_thread.join(timeout)
-        except Exception:
-            # Best-effort; we don't want shutdown to raise in close handlers
-            pass
 
     # ------------------------------------------------------------------
-    # Internal helpers
+    # Auxiliares internos
     # ------------------------------------------------------------------
-    def _enqueue_message(self, message: tuple, *, force: bool = False) -> bool:
-        """Attempt to enqueue a message for the writer thread.
+    def _enqueue_message(
+        self, message: Tuple[Any, ...], *, force: bool = False
+    ) -> bool:
+        """Tenta enfileirar uma mensagem para a thread de escrita.
 
-        Returns True if the message was enqueued. If the queue backlog exceeds
-        `self._max_queue_size` and `force` is False, the message is dropped to
-        avoid blocking the producer. Control messages (start/stop/abort) pass
-        `force=True` to guarantee delivery.
+        Retorna True quando a mensagem foi aceita. Se o backlog ultrapassar
+        `self._max_queue_size` e `force` for False, a mensagem é descartada para
+        não bloquear quem produz. Mensagens de controle (start/stop/abort) usam
+        `force=True` para garantir a entrega.
         """
 
         with self._queue_lock:
@@ -354,7 +363,7 @@ class LogManager(QObject):
                 self._queued_items -= 1
 
     def export_to(self, destination: Path) -> bool:
-        """Export the current buffered log to a user-selected location."""
+        """Exporta o log em memória para um local escolhido pelo usuário."""
 
         try:
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -368,19 +377,25 @@ class LogManager(QObject):
         return True
 
     def _parse_line(self, raw_line: str) -> LogEntry:
-        match = _LOG_PATTERN.match(raw_line)
-        if match:
+        if match := _LOG_PATTERN.match(raw_line):
             level = match.group("level").upper()
             time_fragment = match.group("time")
             message = match.group("body").strip()
             today = datetime.now().date()
-            timestamp = datetime.strptime(f"{today} {time_fragment}", "%Y-%m-%d %H:%M:%S")
+            timestamp = datetime.strptime(
+                f"{today} {time_fragment}", "%Y-%m-%d %H:%M:%S"
+            )
             display = f"[{time_fragment}] [{level}] {message}"
-            normalized_raw = raw_line
         else:
             level = "INFO"
             timestamp = datetime.now()
             message = raw_line.strip()
             display = f"[{timestamp.strftime('%H:%M:%S')}] [INFO] {message}"
-            normalized_raw = raw_line
-        return LogEntry(timestamp=timestamp, level=level, message=message, raw=normalized_raw, display=display)
+        normalized_raw = raw_line
+        return LogEntry(
+            timestamp=timestamp,
+            level=level,
+            message=message,
+            raw=normalized_raw,
+            display=display,
+        )

@@ -1,4 +1,15 @@
-"""Dialog helpers for handling bridge interactions in the Qt GUI."""
+"""Utilitários de diálogo para lidar com interações de bridge na Qt GUI.
+
+Guia de edição (resumido)
+- Modificável pelo usuário:
+    - Textos exibidos para o usuário e ajustes leves de layout.
+- Requer atenção:
+    - Mudanças na lógica de temporização e feedback do bridge podem travar fluxos críticos.
+- Apenas para devs:
+    - Alterações profundas na integração com `DialogService` ou com controles de foco.
+
+Veja `docs/EDIT_GUIDELINES.md` para regras e exemplos.
+"""
 
 from __future__ import annotations
 
@@ -28,7 +39,7 @@ except ModuleNotFoundError:  # pragma: no cover
 
 
 def _active_parent() -> Optional[QWidget]:
-    """Return an active Qt parent window, if one exists."""
+    """Retorna uma janela Qt ativa para servir como parent, se existir."""
 
     window = QApplication.activeWindow()
     if window is not None:
@@ -40,7 +51,9 @@ def _active_parent() -> Optional[QWidget]:
     return stored if isinstance(stored, QWidget) else None
 
 
-_GUI_DIALOG_SERVICE = DialogService(parent_provider=_active_parent, bridge_enabled=False)
+_GUI_DIALOG_SERVICE = DialogService(
+    parent_provider=_active_parent, bridge_enabled=False
+)
 
 
 def _restore_browser_focus(preserve_tab: bool = True) -> None:
@@ -217,7 +230,9 @@ def show_prompt(
     return trimmed or None
 
 
-def show_confirm(parent: QWidget, *, title: str, text: str, buttons: list[str]) -> Optional[str]:
+def show_confirm(
+    parent: QWidget, *, title: str, text: str, buttons: list[str]
+) -> Optional[str]:
     dialog = QDialog(parent)
     dialog.setWindowTitle(title or "Confirmação")
     dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)

@@ -1,10 +1,10 @@
-"""Shared runtime helpers for Auto MDF automation scripts.
+"""Utilitários compartilhados de tempo de execução para scripts Auto MDF.
 
-Centralizes bridge-aware dialog handling, browser focus restoration and
-progress/error utilities so that individual scripts stay lightweight and
-consistent. Keeping the logic here reduces duplication and makes it easier to
-roll out compatibility fixes (for example, timing adjustments) across the
-entire catalogue of scripts.
+Centraliza o tratamento de diálogos integrados ao bridge, a restauração de
+foco do navegador e utilitários de progresso/erros para manter cada script
+leve e consistente. Reunir a lógica aqui reduz duplicidade e facilita aplicar
+correções de compatibilidade (por exemplo, ajustes de tempo) em todo o
+catálogo de scripts.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ _SLEEP_PATCHED = False
 
 
 def _log_event(message: str, *, level: str = "info") -> None:
-    """Emit a unified diagnostic log entry for automation scripts."""
+    """Emite uma entrada padronizada de log diagnóstico para os scripts."""
 
     timestamp = datetime.now().strftime("%H:%M:%S")
     label = level.upper()
@@ -38,7 +38,7 @@ def _log_event(message: str, *, level: str = "info") -> None:
 
 
 def _resolve_bridge_override() -> Optional[bool]:
-    """Decide whether the dialog bridge should be forced on or off."""
+    """Determina se o bridge de diálogo deve ser forçado ligado ou desligado."""
 
     force = os.environ.get("MDF_FORCE_BRIDGE")
     if force is not None:
@@ -58,7 +58,7 @@ elif _BRIDGE_OVERRIDE is True:
 
 
 def configure_stdio() -> None:
-    """Force UTF-8 output so Windows consoles behave like the GUI bridge."""
+    """Força saída UTF-8 para consoles Windows se comportarem como o bridge da GUI."""
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     if hasattr(sys.stderr, "reconfigure"):
@@ -74,14 +74,17 @@ def ensure_browser_focus(
     retry_delay: float = 0.25,
     switch_to_target_tab: Optional[bool] = None,
 ) -> bool:
-    """Attempt to bring the browser back to the foreground.
+    """Tenta trazer o navegador para o primeiro plano.
 
-    The helper now supports selecting a specific browser tab (1-9). When a
-    ``target_tab`` is provided the function ensures the controller tracks that
-    tab and does not preserve the current one.
+    O helper agora suporta selecionar uma aba específica do navegador (1-9).
+    Quando ``target_tab`` é informado a função garante que o controlador
+    ajuste essa aba e não preserve a atual.
     """
     if focus is None:
-        _log_event("automation_focus module indisponível; pulando restauração de foco.", level="warning")
+        _log_event(
+            "automation_focus module indisponível; pulando restauração de foco.",
+            level="warning",
+        )
         return False
 
     if _DIALOG_SERVICE.is_modal_active():
@@ -114,13 +117,17 @@ def ensure_browser_focus(
                 allow_taskbar=allow_taskbar,
                 preserve_tab=preserve_tab,
                 switch_to_target_tab=effective_switch,
-            ) and focus.wait_until_browser_active(force_tab=bool(effective_switch and not preserve_tab)):
+            ) and focus.wait_until_browser_active(
+                force_tab=bool(effective_switch and not preserve_tab)
+            ):
                 _log_event("Foco do navegador restabelecido com sucesso.")
                 return True
         if attempt < attempts - 1:
             time.sleep(pause)
 
-    if focus.wait_until_browser_active(force_tab=bool(effective_switch and not preserve_tab)):
+    if focus.wait_until_browser_active(
+        force_tab=bool(effective_switch and not preserve_tab)
+    ):
         _log_event("Foco do navegador ativo detectado após tentativas auxiliares.")
         return True
 
@@ -137,7 +144,7 @@ def switch_browser_tab(
     ensure_focus: bool = True,
     allow_taskbar: bool = True,
 ) -> bool:
-    """Switch the automation focus to a specific browser tab."""
+    """Alterna o foco da automação para uma aba específica do navegador."""
 
     if focus is None:
         _log_event(
@@ -168,7 +175,7 @@ def switch_browser_tab(
 
 
 def prompt_topmost(*args, **kwargs) -> Optional[str]:
-    """Show a prompt that stays on top, harmonized with the GUI bridge."""
+    """Exibe um prompt sempre visível, alinhado ao comportamento do bridge da GUI."""
     require_input = bool(kwargs.pop("require_input", False))
     allow_cancel = bool(kwargs.pop("allow_cancel", True))
     cancel_message = kwargs.pop("cancel_message", "")
@@ -208,7 +215,7 @@ def prompt_topmost(*args, **kwargs) -> Optional[str]:
 
 
 def alert_topmost(*args, **kwargs) -> str:
-    """Show an alert that stays on top, using the GUI bridge when possible."""
+    """Mostra um alerta sempre visível, usando o bridge da GUI quando possível."""
     text, title, button_default = _parse_text_title_defaults(args, kwargs, "Informação")
     button_text = kwargs.get("button", button_default or "OK")
 
@@ -225,14 +232,16 @@ def alert_topmost(*args, **kwargs) -> str:
             on_restore_focus=restore_focus,
             parent=None,
         )
-        _log_event(f"Alerta exibido (title='{title}', button='{button_text}').", level="debug")
+        _log_event(
+            f"Alerta exibido (title='{title}', button='{button_text}').", level="debug"
+        )
     except Exception as exc:  # pragma: no cover
         _log_event(f"Falha ao exibir alerta Qt: {exc}", level="error")
     return button_text or "OK"
 
 
 def confirm_topmost(*args, **kwargs) -> Optional[str]:
-    """Show a confirmation dialog that stays on top."""
+    """Exibe um diálogo de confirmação que permanece em destaque."""
     text, title, _ = _parse_text_title_defaults(args, kwargs, "Confirmação")
     buttons = kwargs.get("buttons") or ["OK", "Cancel"]
     if not isinstance(buttons, list) or not buttons:
@@ -271,7 +280,7 @@ def confirm_topmost(*args, **kwargs) -> Optional[str]:
 
 
 def register_exception_handler(progress_manager: Any) -> None:
-    """Ensure uncaught errors surface in the GUI bridge and log output."""
+    """Garante que erros não capturados apareçam no bridge da GUI e nos logs."""
     original_hook = sys.excepthook
 
     def _handle(exc_type, exc_value, exc_traceback):
@@ -280,10 +289,13 @@ def register_exception_handler(progress_manager: Any) -> None:
             return
         with suppress(Exception):
             progress_manager.error(f"Erro inesperado: {exc_value}")
-        _log_event(f"Exceção não tratada: {exc_type.__name__}: {exc_value}", level="error")
+        _log_event(
+            f"Exceção não tratada: {exc_type.__name__}: {exc_value}", level="error"
+        )
         try:
             alert_topmost(
-                "Ocorreu um erro inesperado. Verifique o log para detalhes.\n\n" f"{exc_value}"
+                "Ocorreu um erro inesperado. Verifique o log para detalhes.\n\n"
+                f"{exc_value}"
             )
         finally:
             original_hook(exc_type, exc_value, exc_traceback)
@@ -292,20 +304,20 @@ def register_exception_handler(progress_manager: Any) -> None:
 
 
 def checkpoint(progress_manager: Any, percent: int, step: str) -> None:
-    """Update progress consistently across scripts."""
+    """Atualiza o progresso de forma consistente entre os scripts."""
     progress_manager.update(percent, step)
     progress_manager.add_log(step)
 
 
 def abort(progress_manager: Any, message: str) -> None:
-    """Stop execution after surfacing the reason to the operator."""
+    """Interrompe a execução após informar o motivo ao operador."""
     progress_manager.error(message)
     alert_topmost(message)
     raise SystemExit(1)
 
 
 def apply_pyautogui_bridge(pyautogui_module: Any) -> None:
-    """Patch PyAutoGUI dialogs and timing knobs for bridge compatibility."""
+    """Ajusta diálogos e temporizações do PyAutoGUI para compatibilidade com o bridge."""
     setattr(pyautogui_module, "prompt", prompt_topmost)
     setattr(pyautogui_module, "alert", alert_topmost)
     setattr(pyautogui_module, "confirm", confirm_topmost)
@@ -332,11 +344,19 @@ def _apply_sleep_scaling() -> None:
         return
 
     env = os.environ
-    short_threshold = _safe_float(env.get("MDF_SLEEP_THRESHOLD_SHORT"), default=0.35, minimum=0.0)
-    medium_threshold = _safe_float(env.get("MDF_SLEEP_THRESHOLD_MEDIUM"), default=1.2, minimum=short_threshold)
+    short_threshold = _safe_float(
+        env.get("MDF_SLEEP_THRESHOLD_SHORT"), default=0.35, minimum=0.0
+    )
+    medium_threshold = _safe_float(
+        env.get("MDF_SLEEP_THRESHOLD_MEDIUM"), default=1.2, minimum=short_threshold
+    )
 
-    short_scale = _safe_float(env.get("MDF_SLEEP_SCALE_SHORT"), default=1.0, minimum=0.0)
-    medium_scale = _safe_float(env.get("MDF_SLEEP_SCALE_MEDIUM"), default=1.0, minimum=0.0)
+    short_scale = _safe_float(
+        env.get("MDF_SLEEP_SCALE_SHORT"), default=1.0, minimum=0.0
+    )
+    medium_scale = _safe_float(
+        env.get("MDF_SLEEP_SCALE_MEDIUM"), default=1.0, minimum=0.0
+    )
     long_scale = _safe_float(env.get("MDF_SLEEP_SCALE_LONG"), default=1.0, minimum=0.0)
 
     def _scaled_sleep(seconds: float) -> None:
@@ -366,7 +386,9 @@ def _safe_float(raw: Optional[str], *, default: float, minimum: float) -> float:
     return max(minimum, value)
 
 
-def _parse_text_title_defaults(args: Sequence[Any], kwargs: dict[str, Any], default_title: str) -> tuple[str, str, Optional[str]]:
+def _parse_text_title_defaults(
+    args: Sequence[Any], kwargs: dict[str, Any], default_title: str
+) -> tuple[str, str, Optional[str]]:
     text = ""
     title = default_title
     default_value: Optional[str] = None

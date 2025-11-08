@@ -23,19 +23,19 @@ from .main_window import MainWindow
 
 
 def _configure_qt_environment() -> None:
-    """Apply basic Qt environment tweaks before creating the application."""
+    """Aplica ajustes básicos de ambiente Qt antes de criar a aplicação."""
     os.environ.setdefault("QT_ENABLE_HIGHDPI_SCALING", "1")
     os.environ.setdefault("QT_AUTO_SCREEN_SCALE_FACTOR", "1")
 
 
 def run(python_executable: Optional[str] = None) -> int:
-    """Launch the Auto MDF control center window.
+    """Inicia a janela do centro de controle Auto MDF.
 
-    Parameters
+    Parâmetros
     ----------
     python_executable:
-        Interpreter path used when spawning automation scripts. Defaults to the
-        current interpreter.
+        Caminho do interpretador usado ao iniciar os scripts de automação. Por
+        padrão usa o interpretador atual.
     """
 
     app = QApplication.instance()
@@ -56,7 +56,7 @@ def run(python_executable: Optional[str] = None) -> int:
 
 
 def main() -> int:
-    """Console script entry point."""
+    """Ponto de entrada quando executado via console."""
 
     return run()
 

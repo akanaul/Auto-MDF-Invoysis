@@ -33,7 +33,10 @@ def is_windows() -> bool:
 
 def is_codespaces() -> bool:
     # GitHub Codespaces sets either CODESPACES or CODESPACE_NAME
-    return any(os.environ.get(name) for name in ("CODESPACES", "CODESPACE_NAME", "GITHUB_CODESPACES"))
+    return any(
+        os.environ.get(name)
+        for name in ("CODESPACES", "CODESPACE_NAME", "GITHUB_CODESPACES")
+    )
 
 
 def run_command(command: Sequence[str]) -> None:
@@ -59,36 +62,46 @@ def ensure_virtualenv(python_executable: Path, venv_path: Path) -> Path:
 
 
 def upgrade_tooling(python_executable: Path, *, extra_args: Iterable[str] = ()) -> None:
-    run_command([
-        str(python_executable),
-        "-m",
-        "pip",
-        "install",
-        "--upgrade",
-        "pip",
-        "setuptools",
-        "wheel",
-        *extra_args,
-    ])
+    run_command(
+        [
+            str(python_executable),
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "pip",
+            "setuptools",
+            "wheel",
+            *extra_args,
+        ]
+    )
 
 
-def install_requirements(python_executable: Path, *, extra_args: Iterable[str] = ()) -> None:
+def install_requirements(
+    python_executable: Path, *, extra_args: Iterable[str] = ()
+) -> None:
     if not REQUIREMENTS_FILE.exists():
-        raise FileNotFoundError(f"Arquivo requirements nao encontrado: {REQUIREMENTS_FILE}")
-    run_command([
-        str(python_executable),
-        "-m",
-        "pip",
-        "install",
-        "--upgrade",
-        "-r",
-        str(REQUIREMENTS_FILE),
-        *extra_args,
-    ])
+        raise FileNotFoundError(
+            f"Arquivo requirements nao encontrado: {REQUIREMENTS_FILE}"
+        )
+    run_command(
+        [
+            str(python_executable),
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "-r",
+            str(REQUIREMENTS_FILE),
+            *extra_args,
+        ]
+    )
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Instalador de dependencias do Auto MDF InvoISys")
+    parser = argparse.ArgumentParser(
+        description="Instalador de dependencias do Auto MDF InvoISys"
+    )
     parser.add_argument(
         "--mode",
         choices=("venv", "user", "system"),

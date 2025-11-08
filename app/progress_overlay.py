@@ -19,7 +19,11 @@ from PySide6.QtWidgets import QLabel, QProgressBar, QVBoxLayout, QWidget
 
 
 class ProgressOverlay(QWidget):
-    """Floating progress indicator that stays visible even when the GUI is minimized."""
+    """Indicador de progresso flutuante que permanece visível mesmo com a GUI minimizada."""
+
+    # Seguro ajustar: estilo, padding e mensagens padrão.
+    # Requer atenção: duração dos timers e flags de transparência — teste em todos os monitores-alvo.
+    # Apenas para devs: flags de janela ou lógica de reposicionamento; valores incorretos quebram o comportamento sempre no topo.
 
     def __init__(self) -> None:
         flags = (
@@ -49,7 +53,9 @@ class ProgressOverlay(QWidget):
         self._progress.setFormat("%p%")
         self._progress.setTextVisible(True)
         self._progress.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._progress.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self._progress.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
+        )
         layout.addWidget(self._progress)
 
         self._hide_timer = QTimer(self)
@@ -64,9 +70,10 @@ class ProgressOverlay(QWidget):
         )
 
     # ------------------------------------------------------------------
-    # Public API
+    # API pública
     # ------------------------------------------------------------------
     def show_indeterminate(self, message: str) -> None:
+        """Exibe o overlay com um indicador de progresso contínuo."""
         self._hide_timer.stop()
         self._message_label.setText(message)
         self._progress.setRange(0, 0)
@@ -74,6 +81,7 @@ class ProgressOverlay(QWidget):
         self._ensure_visible()
 
     def update_progress(self, value: int, message: str | None = None) -> None:
+        """Mostra o progresso percentual, atualizando a legenda se informado."""
         self._hide_timer.stop()
         self._progress.setRange(0, 100)
         self._progress.setValue(max(0, min(100, value)))
@@ -82,7 +90,10 @@ class ProgressOverlay(QWidget):
         self._progress.setFormat("%p%")
         self._ensure_visible()
 
-    def show_result(self, success: bool, message: str, auto_hide_ms: int = 4000) -> None:
+    def show_result(
+        self, success: bool, message: str, auto_hide_ms: int = 4000
+    ) -> None:
+        """Mantém o overlay visível em caso de sucesso ou erro e oculta após o atraso informado."""
         self._hide_timer.stop()
         self._progress.setRange(0, 100)
         self._progress.setValue(100 if success else 0)
@@ -93,11 +104,12 @@ class ProgressOverlay(QWidget):
             self._hide_timer.start(auto_hide_ms)
 
     def hide_immediately(self) -> None:
+        """Oculta o overlay imediatamente, sem aguardar o timer."""
         self._hide_timer.stop()
         self.hide()
 
     # ------------------------------------------------------------------
-    # Helpers
+    # Auxiliares
     # ------------------------------------------------------------------
     def _ensure_visible(self) -> None:
         self._reposition()
@@ -106,9 +118,11 @@ class ProgressOverlay(QWidget):
         self.raise_()
 
     def _reposition(self) -> None:
-        """Move overlay near the bottom-right corner of the active screen."""
+        """Reposiciona o overlay próximo ao canto inferior direito da tela ativa."""
         self.adjustSize()
-        screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+        screen = (
+            QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+        )
         if screen is None:
             return
         geometry = screen.availableGeometry()
