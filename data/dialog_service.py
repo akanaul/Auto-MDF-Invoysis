@@ -246,11 +246,13 @@ class DialogService:
                 service._log("Prompt Qt showEvent acionado.", level="debug")
                 super().showEvent(event)
                 # Auto-focar no campo de entrada quando o diálogo aparecer
-                for child in self.findChildren(QLineEdit):
-                    if child.isVisible():
-                        child.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
-                        child.selectAll()
-                        break
+                def set_focus():
+                    for child in self.findChildren(QLineEdit):
+                        if child.isVisible():
+                            child.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
+                            child.selectAll()
+                            break
+                QTimer.singleShot(0, set_focus)
 
             def hideEvent(self, event) -> None:  # type: ignore[override]
                 service._log("Prompt Qt hideEvent acionado.", level="debug")

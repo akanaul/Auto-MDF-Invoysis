@@ -84,7 +84,7 @@ class ScriptRunner(QThread):
             return
 
         env = os.environ.copy()
-        # env["MDF_BRIDGE_ACTIVE"] = "1"  # Desabilitado para evitar travamentos
+        env["MDF_BRIDGE_ACTIVE"] = "1"
         env["MDF_BRIDGE_PREFIX"] = BRIDGE_PREFIX
         env["MDF_BRIDGE_ACK"] = BRIDGE_ACK
         env["MDF_BRIDGE_CANCEL"] = BRIDGE_CANCEL
@@ -98,6 +98,7 @@ class ScriptRunner(QThread):
         env["PYTHONPATH"] = os.pathsep.join(component for component in pythonpath_components if component)
 
         try:
+            creationflags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' and hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
             process = subprocess.Popen(
                 [self.python_executable, "-u", str(script_path)],
                 cwd=str(script_path.parent),
@@ -108,6 +109,7 @@ class ScriptRunner(QThread):
                 encoding="utf-8",
                 errors="replace",
                 env=env,
+                creationflags=creationflags,
             )
         except Exception as exc:
             self.log_message.emit(f"Falha ao iniciar {script_path.name}: {exc}")

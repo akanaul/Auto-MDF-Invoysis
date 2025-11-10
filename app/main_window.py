@@ -24,6 +24,7 @@ from typing import Optional
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QHBoxLayout,
@@ -109,6 +110,10 @@ class MainWindow(QMainWindow):
         self._settings_apply_timer.timeout.connect(self._commit_pending_settings)
         self._pending_settings: Optional[AutomationSettings] = None
 
+        self._process_check_timer = QTimer(self)
+        self._process_check_timer.setInterval(1000)  # Check every second
+        self._process_check_timer.timeout.connect(self._check_process_status)
+
         self._build_ui()
         self._connect_signals()
 
@@ -175,6 +180,21 @@ class MainWindow(QMainWindow):
         script_row.addWidget(self.run_button)
         script_row.addWidget(self.stop_button)
 
+        self.use_default_tab_checkbox = QCheckBox("Usar aba específica (experimental)")
+        self.use_default_tab_checkbox.setChecked(False)
+        self.use_default_tab_checkbox.setToolTip(
+            "Marque para escolher uma aba específica para iniciar a automação (funcionalidade experimental)."
+        )
+        control_layout.addWidget(self.use_default_tab_checkbox)
+
+        self.tab_warning_label = QLabel(
+            "ATENÇÃO: A seleção manual de aba é experimental e pode causar comportamentos inesperados. Use apenas se souber exatamente o que está fazendo."
+        )
+        self.tab_warning_label.setStyleSheet("color: #c0392b; font-weight: bold;")
+        self.tab_warning_label.setWordWrap(True)
+        self.tab_warning_label.setVisible(False)
+        control_layout.addWidget(self.tab_warning_label)
+
         browser_row, _ = self._new_row(control_layout, "Aba inicial do Microsoft Edge:")
 
         self.browser_tab_combo = QComboBox()
@@ -189,6 +209,8 @@ class MainWindow(QMainWindow):
             self.browser_tab_combo.setCurrentIndex(default_index)
         browser_row.addWidget(self.browser_tab_combo)
         browser_row.addStretch(1)
+
+        self.browser_tab_combo.setEnabled(self.use_default_tab_checkbox.isChecked())
 
         taskbar_row, _ = self._new_row(
             control_layout, "Posição do Edge na barra de tarefas:"
@@ -342,6 +364,10 @@ class MainWindow(QMainWindow):
         self.status_label.setText("Encerrando script...")
         self._progress_overlay.show_indeterminate("Encerrando automação...")
 
+    def _on_use_default_tab_toggled(self, checked: bool) -> None:
+        self.browser_tab_combo.setEnabled(checked)
+        self.tab_warning_label.setVisible(checked)
+
     def _on_export_log(self) -> None:
         raw_lines = self._log_manager.raw_lines
         if not raw_lines:
@@ -461,9 +487,11 @@ class MainWindow(QMainWindow):
         self._progress_overlay.show_indeterminate(f"Executando {overlay_label}...")
         self._update_log_buttons(True)
         self._progress_watcher.start()
+        self._process_check_timer.start()
 
     def _on_process_finished(self, exit_code: int) -> None:
         self._progress_watcher.stop()
+        self._process_check_timer.stop()
         self._automation_active = False
         self._set_running_state(False)
         self.progress_bar.setRange(0, 100)
@@ -701,6 +729,12 @@ class MainWindow(QMainWindow):
                 or str(data.get("status", "")).strip().title()
                 or "Automação em andamento"
             )
+            estimated_time = data.get("estimated_time_remaining")
+            if estimated_time and estimated_time > 0:
+                minutes = estimated_time // 60
+                seconds = estimated_time % 60
+                time_str = f"{minutes}:{seconds:02d}" if minutes > 0 else f"{seconds}s"
+                overlay_message += f"\nTempo restante: ~{time_str}"
             self._progress_overlay.update_progress(percentage, overlay_message)
 
         status = str(data.get("status", "")).strip().lower()
@@ -716,6 +750,16 @@ class MainWindow(QMainWindow):
             if self._automation_active:
                 self._progress_overlay.show_result(False, step or "Erro na automação.")
 
+        # Verificar se o processo terminou sem emitir sinal de finalização
+        if self._automation_active and not self._automation_service.is_running():
+            exit_code = 1 if status == "error" else 0
+            self._on_process_finished(exit_code)
+
+    def _check_process_status(self) -> None:
+        """Verifica periodicamente se o processo de automação ainda está rodando."""
+        if self._automation_active and not self._automation_service.is_running():
+            self._on_process_finished(1)  # Assume erro se não detectado de outra forma
+
     @staticmethod
     def _normalize_browser_tab(value: Optional[str]) -> int:
         try:
@@ -726,6 +770,8 @@ class MainWindow(QMainWindow):
         return min(tab, 9)
 
     def _selected_browser_tab(self) -> int:
+        if not self.use_default_tab_checkbox.isChecked():
+            return 1
         data = (
             self.browser_tab_combo.currentData()
             if hasattr(self, "browser_tab_combo")

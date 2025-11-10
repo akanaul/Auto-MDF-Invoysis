@@ -44,6 +44,9 @@ def _missing_modules(modules: Iterable[str]) -> list[str]:
 
 def _venv_python_path() -> Path:
     if os.name == "nt":
+        pythonw = VENV_DIR / "Scripts" / "pythonw.exe"
+        if pythonw.exists():
+            return pythonw
         return VENV_DIR / "Scripts" / "python.exe"
     return VENV_DIR / "bin" / "python"
 
