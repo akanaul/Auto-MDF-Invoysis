@@ -1,4 +1,4 @@
-# Auto MDF InvoySys
+# Auto MDF InvoySis
 
 Automação do fluxo MDF-e com uma central moderna em PySide6. A aplicação oferece um painel único para iniciar scripts, acompanhar logs e responder diálogos emitidos pelos robôs sem depender do front-end legado anterior.
 
