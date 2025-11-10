@@ -41,6 +41,7 @@ def is_codespaces() -> bool:
 
 def run_command(command: Sequence[str]) -> None:
     print(f"\n> {' '.join(command)}")
+    # Security: command is a sequence of strings passed from trusted sources
     subprocess.run(command, check=True)
 
 
@@ -144,25 +145,7 @@ def main() -> int:
         print("Contexto             : GitHub Codespaces detectado")
 
     try:
-        if args.mode == "venv":
-            venv_path = Path(args.venv_path).resolve()
-            venv_python = ensure_virtualenv(base_python, venv_path)
-            upgrade_tooling(venv_python, extra_args=pip_extra)
-            install_requirements(venv_python, extra_args=pip_extra)
-            print(f"\nAmbiente virtual pronto em {venv_path}")
-            print("Para ativar:")
-            if is_windows():
-                print(f"    {venv_path / 'Scripts' / 'activate.bat'}")
-            else:
-                print(f"    source {venv_path / 'bin' / 'activate'}")
-        elif args.mode == "user":
-            upgrade_tooling(base_python, extra_args=pip_extra)
-            install_requirements(base_python, extra_args=("--user", *pip_extra))
-            print("\nDependencias instaladas no escopo do usuario.")
-        else:  # system
-            upgrade_tooling(base_python, extra_args=pip_extra)
-            install_requirements(base_python, extra_args=pip_extra)
-            print("\nDependencias instaladas no ambiente atual.")
+        _perform_installation(base_python, args, pip_extra)
     except subprocess.CalledProcessError as exc:
         print(f"\nFalha ao instalar dependencias (codigo {exc.returncode}).")
         return exc.returncode
@@ -172,6 +155,28 @@ def main() -> int:
 
     print("\nInstalacao concluida com sucesso!")
     return 0
+
+
+def _perform_installation(base_python: Path, args: argparse.Namespace, pip_extra: tuple[str, ...]) -> None:
+    if args.mode == "venv":
+        venv_path = Path(args.venv_path).resolve()
+        venv_python = ensure_virtualenv(base_python, venv_path)
+        upgrade_tooling(venv_python, extra_args=pip_extra)
+        install_requirements(venv_python, extra_args=pip_extra)
+        print(f"\nAmbiente virtual pronto em {venv_path}")
+        print("Para ativar:")
+        if is_windows():
+            print(f"    {venv_path / 'Scripts' / 'activate.bat'}")
+        else:
+            print(f"    source {venv_path / 'bin' / 'activate'}")
+    elif args.mode == "user":
+        upgrade_tooling(base_python, extra_args=pip_extra)
+        install_requirements(base_python, extra_args=("--user", *pip_extra))
+        print("\nDependencias instaladas no escopo do usuario.")
+    else:  # system
+        upgrade_tooling(base_python, extra_args=pip_extra)
+        install_requirements(base_python, extra_args=pip_extra)
+        print("\nDependencias instaladas no ambiente atual.")
 
 
 if __name__ == "__main__":

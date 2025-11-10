@@ -45,9 +45,7 @@ def _missing_modules(modules: Iterable[str]) -> list[str]:
 def _venv_python_path() -> Path:
     if os.name == "nt":
         pythonw = VENV_DIR / "Scripts" / "pythonw.exe"
-        if pythonw.exists():
-            return pythonw
-        return VENV_DIR / "Scripts" / "python.exe"
+        return pythonw if pythonw.exists() else VENV_DIR / "Scripts" / "python.exe"
     return VENV_DIR / "bin" / "python"
 
 
@@ -61,6 +59,7 @@ def _ensure_virtualenv() -> Path:
     log_path = LOGS_DIR / "startup-install.log"
 
     command = [sys.executable, "-m", "venv", str(VENV_DIR)]
+    # Security: command constructed from trusted paths (sys.executable and string literal)
     result = subprocess.run(command, capture_output=True, text=True, check=False)
 
     log_path.write_text(
@@ -150,6 +149,7 @@ def _install_dependencies(python_executable: Path) -> Path:
 
     log_lines: list[str] = []
 
+    # Security: command constructed from trusted Path objects (python_executable and install_script)
     with subprocess.Popen(
         command,
         stdout=subprocess.PIPE,
@@ -168,23 +168,27 @@ def _install_dependencies(python_executable: Path) -> Path:
     _write_install_log(log_path, command, log_lines, returncode)
 
     if returncode != 0:
-        stdout_combined = "".join(log_lines).lower()
-        details = _build_install_error_details(stdout_combined)
-        print(
-            "\nA instalação automática falhou. Consulte o log e siga as instruções abaixo:",
-            flush=True,
-        )
-        print(f"  - Log: {log_path}", flush=True)
-        print(MANUAL_INSTALL_HINT, flush=True)
-        details.append(MANUAL_INSTALL_HINT)
-        raise DependencyInstallationError(
-            "Falha ao instalar dependências automaticamente.",
-            log_path,
-            "\n".join(details),
-        )
+        _handle_install_error(log_path, log_lines)
 
     print("Instalação automática concluída com sucesso.\n", flush=True)
     return log_path
+
+
+def _handle_install_error(log_path: Path, log_lines: list[str]) -> None:
+    stdout_combined = "".join(log_lines).lower()
+    details = _build_install_error_details(stdout_combined)
+    print(
+        "\nA instalação automática falhou. Consulte o log e siga as instruções abaixo:",
+        flush=True,
+    )
+    print(f"  - Log: {log_path}", flush=True)
+    print(MANUAL_INSTALL_HINT, flush=True)
+    details.append(MANUAL_INSTALL_HINT)
+    raise DependencyInstallationError(
+        "Falha ao instalar dependências automaticamente.",
+        log_path,
+        "\n".join(details),
+    )
 
 
 def _write_install_log(

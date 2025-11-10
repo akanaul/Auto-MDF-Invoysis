@@ -191,7 +191,6 @@ def apply_runtime_settings(settings: AutomationSettings) -> None:
             _ORIGINAL_PYAUTOGUI_MIN_SLEEP = float(getattr(pyautogui, "MINIMUM_SLEEP"))
         except (AttributeError, TypeError, ValueError):
             _ORIGINAL_PYAUTOGUI_MIN_SLEEP = None
-    pause = max(0.0, float(settings.pyautogui_pause))
     fail_safe = bool(settings.pyautogui_failsafe)
     pyautogui.FAILSAFE = fail_safe
     if settings.use_default_timers:
@@ -206,6 +205,7 @@ def apply_runtime_settings(settings: AutomationSettings) -> None:
                 max(0.0, float(_ORIGINAL_PYAUTOGUI_MIN_SLEEP)),
             )
     else:
+        pause = max(0.0, float(settings.pyautogui_pause))
         pyautogui.PAUSE = pause
         if hasattr(pyautogui, "MINIMUM_SLEEP"):
             setattr(

@@ -10,7 +10,6 @@ Guia de edição (resumido)
 
 Veja `docs/EDIT_GUIDELINES.md` para regras e exemplos.
 """
-# sourcery skip: all
 
 from __future__ import annotations
 
@@ -148,7 +147,6 @@ class MainWindow(QMainWindow):
         layout.setSpacing(spacing)
         return layout
 
-    # sourcery skip: extract-method
     def _build_ui(self) -> None:
         central = QWidget(self)
         outer_layout = self._configure_vbox(
@@ -556,7 +554,6 @@ class MainWindow(QMainWindow):
                 "Nenhum script encontrado na pasta 'scripts'.", 5000
             )
 
-    # sourcery skip: extract-method
     def _refresh_browser_windows(self) -> None:
         if not hasattr(self, "browser_window_combo"):
             return
@@ -723,6 +720,9 @@ class MainWindow(QMainWindow):
             percentage = 0
         self.progress_bar.setValue(max(0, min(100, percentage)))
 
+        status = str(data.get("status", "")).strip().lower()
+        step = str(data.get("current_step", "")).strip()
+
         if self._automation_active or status == "running":
             overlay_message = (
                 str(data.get("current_step", "")).strip()
@@ -737,8 +737,6 @@ class MainWindow(QMainWindow):
                 overlay_message += f"\nTempo restante: ~{time_str}"
             self._progress_overlay.update_progress(percentage, overlay_message)
 
-        status = str(data.get("status", "")).strip().lower()
-        step = str(data.get("current_step", "")).strip()
         if status in {"running", "paused"} and step:
             self.status_label.setText(step)
         elif status == "completed":

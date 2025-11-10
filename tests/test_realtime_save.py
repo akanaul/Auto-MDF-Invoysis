@@ -14,6 +14,20 @@ if str(project_root) not in sys.path:
 from data.progress_manager import ProgressManager
 from data.script_runtime import start_realtime_progress
 
+def _check_progress_file(progress_file: Path, iteration: int) -> None:
+    """Check and print progress file status."""
+    if progress_file.exists():
+        try:
+            with open(progress_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                percentage = data.get('percentage', 0)
+                current_step = data.get('current_step', '')
+                print(f"[{iteration}] Arquivo JSON: {percentage}% - {current_step}")
+        except Exception as e:
+            print(f"[{iteration}] Erro lendo JSON: {e}")
+    else:
+        print(f"[{iteration}] Arquivo JSON não existe: {progress_file}")
+
 def test_realtime_save():
     """Testa se o progresso em tempo real está sendo salvo."""
     print("Testando salvamento de progresso em tempo real...")
@@ -39,18 +53,7 @@ def test_realtime_save():
 
     for i in range(6):
         time.sleep(3)
-
-        if progress_file.exists():
-            try:
-                with open(progress_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    percentage = data.get('percentage', 0)
-                    current_step = data.get('current_step', '')
-                    print(f"[{i+1}] Arquivo JSON: {percentage}% - {current_step}")
-            except Exception as e:
-                print(f"[{i+1}] Erro lendo JSON: {e}")
-        else:
-            print(f"[{i+1}] Arquivo JSON não existe: {progress_file}")
+        _check_progress_file(progress_file, i+1)
 
     print("Teste concluído!")
 

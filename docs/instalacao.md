@@ -43,7 +43,7 @@ Antes de começar, verifique se o seu computador atende aos seguintes requisitos
 2. Navegue até a pasta do projeto: digite `cd C:\Projetos\Auto-MDF-Invoysis` e pressione Enter.
 3. Execute o instalador: digite `install\install.bat` e pressione Enter.
    - O instalador vai procurar o Python automaticamente e criar um ambiente virtual (uma "caixa" isolada para o software).
-   - Você verá mensagens no terminal mostrando o progresso. Aguarde até ver "Instalacao concluida com sucesso!".
+   - Você verá mensagens no terminal mostrando o progresso. Aguarde até ver "Instalação concluída com sucesso!".
 4. Se houver erros, anote a mensagem e consulte a seção [Solução de Problemas](problemas.md).
 
 ### Passo 3: Verifique a Instalação (Windows)

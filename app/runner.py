@@ -99,6 +99,7 @@ class ScriptRunner(QThread):
 
         try:
             creationflags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' and hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+            # Security: command constructed from trusted Path objects (self.python_executable and script_path)
             process = subprocess.Popen(
                 [self.python_executable, "-u", str(script_path)],
                 cwd=str(script_path.parent),

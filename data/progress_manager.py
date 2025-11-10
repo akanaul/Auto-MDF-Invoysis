@@ -3,8 +3,6 @@ progress_manager.py - Gerenciador de progresso em tempo real para automação MD
 Permite que scripts de automação comuniquem seu progresso via arquivo JSON compartilhado.
 """
 
-# sourcery skip: assign-if-exp, remove-unnecessary-else
-
 from __future__ import annotations
 
 import json
@@ -88,10 +86,7 @@ class ProgressManager:
                 self.progress_data["estimated_time_remaining"] = int(remaining)
 
             # Salvar sempre que o percentual muda para permitir atualização em tempo real no overlay
-            if self.progress_data["percentage"] != old_percentage:
-                self._save_progress()
-                self._last_saved_percentage = self.progress_data["percentage"]
-            elif force_save:
+            if self.progress_data["percentage"] != old_percentage or force_save:
                 self._save_progress()
                 self._last_saved_percentage = self.progress_data["percentage"]
 

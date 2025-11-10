@@ -4,7 +4,7 @@ Este guia ajuda a resolver problemas comuns ao usar o Auto MDF InvoISys. Se o pr
 
 ## Problemas de Instalação
 
-### "Python não encontrado" ou "Nao foi possivel localizar Python"
+### "Python não encontrado" ou "Não foi possível localizar Python"
 
 - **Causa:** Python não está instalado ou não está no PATH.
 - **Solução:**

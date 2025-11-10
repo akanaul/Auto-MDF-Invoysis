@@ -13,6 +13,11 @@ if str(project_root) not in sys.path:
 from data.progress_manager import ProgressManager
 from data.script_runtime import start_line_based_progress
 
+def _print_progress(progress: ProgressManager, message: str) -> None:
+    """Print current progress with a message."""
+    print(message)
+    print(f"Progress: {progress.progress_data['percentage']}% - {progress.progress_data['current_step']}")
+
 def simulate_script_execution():
     """Simula a execução de um script com prompt."""
     print("=== TESTE DE TRACING DE LINHAS ===")
@@ -30,7 +35,7 @@ def simulate_script_execution():
     for i in range(5):
         time.sleep(0.5)
         print(f"Linha simulada {i+1}")
-        print(f"Progress: {progress.progress_data['percentage']}% - {progress.progress_data['current_step']}")
+        _print_progress(progress, f"Progress: {progress.progress_data['percentage']}% - {progress.progress_data['current_step']}")
 
     # Simula prompt (que pode interferir com tracing)
     print("Simulando prompt - pode causar interrupção do tracing...")
@@ -38,17 +43,17 @@ def simulate_script_execution():
     time.sleep(2)
     user_input = "simulado"
     print(f"Input simulado: {user_input}")
-    print(f"Progress após prompt: {progress.progress_data['percentage']}% - {progress.progress_data['current_step']}")
+    _print_progress(progress, f"Progress após prompt: {progress.progress_data['percentage']}% - {progress.progress_data['current_step']}")
 
     # Simula execução após o prompt
     print("Executando código após o prompt...")
     for i in range(10):
         time.sleep(0.5)
         print(f"Linha simulada após prompt {i+1}")
-        print(f"Progress: {progress.progress_data['percentage']}% - {progress.progress_data['current_step']}")
+        _print_progress(progress, f"Progress: {progress.progress_data['percentage']}% - {progress.progress_data['current_step']}")
 
     print("Simulação concluída!")
-    print(f"Progress final: {progress.progress_data['percentage']}% - {progress.progress_data['current_step']}")
+    _print_progress(progress, f"Progress final: {progress.progress_data['percentage']}% - {progress.progress_data['current_step']}")
     time.sleep(2)  # Tempo para o tracing finalizar
 
 if __name__ == "__main__":

@@ -569,7 +569,7 @@ class DialogService:
         cancel_message: str,
         on_restore_focus: Optional[Callable[[], None]] = None,
         parent: Optional["QWidget"] = None,
-    ) -> Optional[str]:  # sourcery skip: low-code-quality
+    ) -> Optional[str]:
         bridge_payload = {
             "type": "prompt",
             "text": text or "",

@@ -202,7 +202,7 @@ class LogManager(QObject):
         """Retoma a thread de escrita em segundo plano."""
         self._pause_event.set()
 
-    def _writer_loop(self) -> None:  # sourcery skip: low-code-quality
+    def _writer_loop(self) -> None:
         """Loop do worker que agrupa escritas e realiza flush periódico.
 
         Comportamento:
