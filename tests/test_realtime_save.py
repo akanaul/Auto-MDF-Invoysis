@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Teste do progresso em tempo real com salvamento."""
 
 import sys
@@ -11,7 +11,9 @@ project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from data.progress_manager import ProgressManager
+from data.progress_manager import (
+    ProgressManager,
+)  # sourcery skip: module-level-import-not-at-top
 
 
 def _check_progress_file(progress_file: Path, iteration: int) -> None:
@@ -48,9 +50,6 @@ def test_realtime_save():
 
     print("Aguardando 2 segundos para estabilização...")
     time.sleep(2)
-
-    print("Aguardando atualizações automáticas...")
-    print("Verificando arquivo JSON a cada 3 segundos...")
 
     progress_file = Path(progress.progress_path)
 

@@ -10,7 +10,9 @@ project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from data.progress_manager import ProgressManager
+from data.progress_manager import (
+    ProgressManager,
+)  # sourcery skip: module-level-import-not-at-top
 
 
 def _print_progress(progress: ProgressManager, message: str) -> None:
