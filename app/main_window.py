@@ -695,7 +695,7 @@ class MainWindow(QMainWindow):
             percentage = 0
         self.progress_bar.setValue(max(0, min(100, percentage)))
 
-        if self._automation_active:
+        if self._automation_active or status == "running":
             overlay_message = (
                 str(data.get("current_step", "")).strip()
                 or str(data.get("status", "")).strip().title()

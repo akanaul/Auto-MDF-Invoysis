@@ -1,0 +1,12 @@
+{
+  "status": "idle",
+  "percentage": 0,
+  "current_step": "Aguardando início...",
+  "total_steps": 0,
+  "current_step_number": 0,
+  "start_time": null,
+  "elapsed_seconds": 0,
+  "messages": [],
+  "errors": [],
+  "estimated_time_remaining": null
+}

@@ -37,6 +37,26 @@ def _log_event(message: str, *, level: str = "info") -> None:
     print(f"[AutoMDF][{label}][{timestamp}] {message}", flush=True)
 
 
+def disable_caps_lock() -> None:
+    """Desabilita o Caps Lock se estiver ativo."""
+    try:
+        import ctypes
+        VK_CAPITAL = 0x14  # código da tecla Caps Lock
+        
+        # Obtém o estado atual do Caps Lock
+        caps_state = ctypes.windll.user32.GetKeyState(VK_CAPITAL)
+        
+        # Se estiver ativo, desliga
+        if caps_state & 1:
+            # Pressiona Caps Lock
+            ctypes.windll.user32.keybd_event(VK_CAPITAL, 0, 0, 0)
+            # Solta Caps Lock
+            ctypes.windll.user32.keybd_event(VK_CAPITAL, 0, 2, 0)
+            _log_event("Caps Lock desabilitado", level="debug")
+    except Exception as e:
+        _log_event(f"Erro ao desabilitar Caps Lock: {e}", level="warning")
+
+
 def _resolve_bridge_override() -> Optional[bool]:
     """Determina se o bridge de diálogo deve ser forçado ligado ou desligado."""
 
@@ -49,7 +69,7 @@ def _resolve_bridge_override() -> Optional[bool]:
 
 
 _BRIDGE_OVERRIDE = _resolve_bridge_override()
-_DIALOG_SERVICE = DialogService(bridge_enabled=_BRIDGE_OVERRIDE)
+_DIALOG_SERVICE = DialogService(bridge_enabled=False)
 
 if _BRIDGE_OVERRIDE is False:
     _log_event("Bridge de diálogo desativada (forçando Qt).", level="debug")
@@ -287,8 +307,36 @@ def register_exception_handler(progress_manager: Any) -> None:
         if exc_type is SystemExit:
             original_hook(exc_type, exc_value, exc_traceback)
             return
+        
+        # Verifica se é uma exceção de failsafe do PyAutoGUI
+        is_failsafe = "FailSafe" in exc_type.__name__
+        
+        if is_failsafe:
+            # Para failsafe, mostra um prompt de confirmação
+            try:
+                result = confirm_topmost(
+                    "O failsafe do PyAutoGUI foi ativado!\n\n"
+                    "A automação foi interrompida porque o mouse foi movido para um canto da tela.\n\n"
+                    "Deseja parar a automação?",
+                    title="Failsafe Ativado",
+                    buttons=["Sim", "Não"]
+                )
+                if result == "Sim":
+                    with suppress(Exception):
+                        progress_manager.error("Automação interrompida pelo usuário (failsafe ativado).")
+                    _log_event("Automação interrompida pelo failsafe.", level="info")
+                    raise SystemExit(0)
+                else:
+                    # Usuário escolheu continuar, mas como é failsafe, talvez ignore ou log
+                    _log_event("Failsafe ativado, mas usuário optou por continuar.", level="warning")
+                    return  # Não propaga a exceção
+            except Exception:
+                # Se o confirm falhar, trata como erro normal
+                pass
+        
         with suppress(Exception):
-            progress_manager.error(f"Erro inesperado: {exc_value}")
+            error_msg = "Automação interrompida pelo usuário (failsafe ativado)." if is_failsafe else f"Erro inesperado: {exc_value}"
+            progress_manager.error(error_msg)
         _log_event(
             f"Exceção não tratada: {exc_type.__name__}: {exc_value}", level="error"
         )
@@ -305,14 +353,24 @@ def register_exception_handler(progress_manager: Any) -> None:
 
 def checkpoint(progress_manager: Any, percent: int, step: str) -> None:
     """Atualiza o progresso de forma consistente entre os scripts."""
-    progress_manager.update(percent, step)
+    progress_manager.update(percent, step, force_save=True)  # Forçar save em checkpoints
     progress_manager.add_log(step)
+
+
+def update_progress_realtime(progress_manager: Any, percent: int, step: str) -> None:
+    """Atualiza o progresso em tempo real sem forçar salvamento (salva apenas se percentual mudou)."""
+    progress_manager.update(percent, step, force_save=False)
+    progress_manager.add_log(step)
+
+
+def update_progress_realtime(progress_manager: Any, percent: int, step: str) -> None:
+    """Atualiza o progresso em tempo real sem forçar salvamento."""
+    progress_manager.update(percent, step, force_save=False)
 
 
 def abort(progress_manager: Any, message: str) -> None:
     """Interrompe a execução após informar o motivo ao operador."""
     progress_manager.error(message)
-    alert_topmost(message)
     raise SystemExit(1)
 
 
@@ -422,4 +480,5 @@ __all__ = [
     "switch_browser_tab",
     "prompt_topmost",
     "register_exception_handler",
+    "update_progress_realtime",
 ]

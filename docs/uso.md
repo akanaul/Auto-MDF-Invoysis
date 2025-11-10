@@ -22,7 +22,7 @@ A janela principal tem:
 - **Lista de Scripts:** À esquerda, uma lista de automações disponíveis (ex.: "ITU X DHL.py", "SOROCABA X DHL.py").
 - **Botões de Controle:** No centro, botões como "Iniciar", "Parar", "Exportar Log" e "Abrir Log".
 - **Área de Logs:** Embaixo, uma caixa de texto mostrando mensagens do que está acontecendo.
-- **Barra de Progresso:** Uma barra que mostra o andamento da automação.
+- **Barra de Progresso:** Uma barra que mostra o andamento da automação em tempo real, avançando linearmente de 5% a 90% com checkpoints precisos.
 - **Abas:** No topo, abas como "Principal" e "Configurações".
 
 ## Executando uma Automação
@@ -33,7 +33,7 @@ A janela principal tem:
    - Abrir o Microsoft Edge automaticamente.
    - Navegar para o site do Invoisys.
    - Preencher formulários e gerar o MDF-e.
-4. Observe a barra de progresso e os logs para ver o andamento.
+4. Observe a barra de progresso (que avança em tempo real) e os logs para ver o andamento.
 5. Quando terminar, você verá uma mensagem de sucesso nos logs.
 
 **Importante:** Não mexa no mouse ou teclado enquanto a automação estiver rodando. O software controla o navegador sozinho.

@@ -60,13 +60,13 @@ Este guia ajuda a resolver problemas comuns ao usar o Auto MDF InvoISys. Se o pr
   2. Aumente pausas em "Configurações" > "Temporizadores".
   3. Feche outras janelas para evitar interferência.
 
-### Barra de progresso para mas logs mostram erro
+### Barra de progresso avança mas execução falha
 
-- **Causa:** Erro no script de automação.
+- **Causa:** Erro no script de automação apesar do progresso parecer normal.
 - **Solução:**
   1. Pare a execução.
-  2. Verifique logs detalhados.
-  3. Tente novamente. Se persistir, reporte ao suporte.
+  2. Verifique logs detalhados para mensagens de erro.
+  3. A barra de progresso agora é linear e precisa - se avança mas há erro, é problema no script, não na medição.
 
 ### Software congela ou não responde
 

@@ -18,13 +18,13 @@ try:
         abort as _abort,
         alert_topmost,
         apply_pyautogui_bridge,
-        checkpoint as _checkpoint,
         confirm_topmost,
         configure_stdio,
+        disable_caps_lock,
         ensure_browser_focus,
-        switch_browser_tab,
         prompt_topmost,
         register_exception_handler,
+        switch_browser_tab,
     )
 except ModuleNotFoundError:
     PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -37,13 +37,13 @@ except ModuleNotFoundError:
         abort as _abort,
         alert_topmost,
         apply_pyautogui_bridge,
-        checkpoint as _checkpoint,
         confirm_topmost,
         configure_stdio,
+        disable_caps_lock,
         ensure_browser_focus,
-        switch_browser_tab,
         prompt_topmost,
         register_exception_handler,
+        switch_browser_tab,
     )
 
 pyautogui = cast(Any, pyautogui)
@@ -51,7 +51,7 @@ configure_stdio()
 apply_pyautogui_bridge(pyautogui)
 
 # Ensure stdout/stderr use UTF-8 in case the environment differs
-progress = ProgressManager()
+progress = ProgressManager(auto_save=False)
 progress.start(total_steps=DEFAULT_TOTAL_STEPS)
 register_exception_handler(progress)
 progress.add_log('Automação iniciada')
@@ -83,7 +83,7 @@ ensure_browser_focus(
     preserve_tab=initial_tab <= 0,
 )
 time.sleep(1)
-_checkpoint(progress, 5, 'Navegador em foco')
+progress.update(5, 'Navegador em foco')
 print('[AutoMDF] Navegador preparado', flush=True)
 
 #GAP
@@ -129,7 +129,7 @@ pyautogui.press('enter')
 time.sleep(0.3)
 pyautogui.press('enter')
 time.sleep(0.5)
-_checkpoint(progress, 15, 'DT localizado e carregado')
+progress.update(15, 'DT localizado e carregado')
 print('[AutoMDF] DT localizado', flush=True)
 #---------------------------------------------------------------
 
@@ -142,22 +142,12 @@ alert_topmost(
     'OBS: Para interromper o processo, deslize o mouse repetidamente em direção ao canto superior direito da tela.'
 )
 time.sleep(2)
-_checkpoint(progress, 20, 'Aguardando download do XML e validações iniciais')
+progress.update(20, 'Aguardando download do XML e validações iniciais')
 print('[AutoMDF] Instruções exibidas ao operador', flush=True)
 #---------------------------------------------------------------
 
-#DESATIVAR CAPS LOOK
-VK_CAPITAL = 0x14  # código da tecla Caps Lock
-
-# Obtém o estado atual do Caps Lock
-caps_state = ctypes.windll.user32.GetKeyState(VK_CAPITAL)
-
-# Se estiver ativo, desliga
-if caps_state & 1:
-    # Pressiona Caps Lock
-    ctypes.windll.user32.keybd_event(VK_CAPITAL, 0, 0, 0)
-    # Solta Caps Lock
-    ctypes.windll.user32.keybd_event(VK_CAPITAL, 0, 2, 0)
+#DESATIVAR CAPS LOCK
+disable_caps_lock()
 
 #---------------------------------------------------------------
 
@@ -186,6 +176,7 @@ pyautogui.press('enter')
 # ALERTA
 alert_topmost('Aguarde o formulário abrir.')
 time.sleep(2)
+progress.update(25, 'Formulário MDF-e aberto')
 #---------------------------------------------------------------
 
 ## DADOS DO MDFE: PRESTADPR DE SERVIÇO
@@ -243,6 +234,8 @@ for _ in range(3):
     time.sleep(0.1)
 pyautogui.press('enter')
 time.sleep(0.2)
+progress.update(30, 'Dados básicos do emitente preenchidos')
+print('[AutoMDF] Dados básicos do emitente preenchidos', flush=True)
 #---------------------------------------------------------------
 
 ## UPLOAD DO ARQUIVO XML
@@ -266,7 +259,7 @@ for _ in range(2):
 pyautogui.press('enter')
 time.sleep(2)
 # Progress update: XML uploaded
-_checkpoint(progress, 35, 'XML selecionado e enviado')
+progress.update(35, 'XML selecionado e enviado')
 print('[AutoMDF] XML anexado', flush=True)
 #---------------------------------------------------------------
 
@@ -341,7 +334,9 @@ for _ in range(3):
     time.sleep(0.1)
 pyautogui.write('13315000', interval=0.1)
 time.sleep(1)
-_checkpoint(progress, 45, 'Dados do MDF-e preenchidos')
+progress.update(40, 'Dados do contribuinte preenchidos')
+print('[AutoMDF] Dados do contribuinte preenchidos', flush=True)
+progress.update(45, 'Dados do MDF-e preenchidos')
 print('[AutoMDF] Dados do MDF-e preenchidos', flush=True)
 
 
@@ -357,6 +352,8 @@ pyautogui.write('MODAL R', interval=0.12)
 pyautogui.press('esc')
 pyautogui.press('enter')
 time.sleep(1)
+progress.update(50, 'Dados básicos do MDF-e preenchidos')
+print('[AutoMDF] Dados básicos preenchidos', flush=True)
 #---------------------------------------------------------------
 
 
@@ -385,7 +382,7 @@ for _ in range(2):
     time.sleep(0.1)
 pyautogui.press('enter')
 time.sleep(1)
-_checkpoint(progress, 55, 'Modal rodoviário preenchido')
+progress.update(55, 'Modal rodoviário preenchido')
 print('[AutoMDF] Modal rodoviário preenchido', flush=True)
 
 
@@ -520,6 +517,8 @@ pyautogui.press('tab')
 time.sleep(0.2)
 pyautogui.press('enter')
 time.sleep(0.2)
+progress.update(60, 'Informações complementares preenchidas')
+print('[AutoMDF] Informações complementares preenchidas', flush=True)
 
 pyautogui.hotkey('ctrl', 'f')
 pyautogui.write('SELECIONE...', interval=0.10)
@@ -555,7 +554,7 @@ pyautogui.press('tab')
 time.sleep(0.05)
 pyautogui.press('enter')
 time.sleep(1)
-_checkpoint(progress, 65, 'Informações adicionais preenchidas')
+progress.update(65, 'Informações adicionais preenchidas')
 print('[AutoMDF] Informações adicionais concluídas', flush=True)
 
 
@@ -596,7 +595,8 @@ pyautogui.press('esc')
 time.sleep(0.2)
 pyautogui.press('enter')
 time.sleep(1)
-
+progress.update(70, 'XML enviado para averbação')
+print('[AutoMDF] XML enviado', flush=True)
 
 #---------------------------------------------------------------
 
@@ -610,6 +610,7 @@ else:
     time.sleep(0.3)
     pyautogui.press('enter')
 time.sleep(2)
+progress.update(75, 'Arquivo XML carregado')
 #---------------------------------------------------------------
 # Seleciona todo o texto da janela e copia
 pyautogui.hotkey('ctrl', 'a')
@@ -652,7 +653,7 @@ pyautogui.press('enter')
 time.sleep(1)
 
 # Progress update: averbação feita
-_checkpoint(progress, 80, 'Averbação realizada e número copiado')
+progress.update(80, 'Averbação realizada e número copiado')
 print('[AutoMDF] Averbação concluída', flush=True)
 
 
@@ -678,6 +679,8 @@ pyautogui.hotkey('ctrl', 'a')
 time.sleep(0.5)
 pyautogui.hotkey('ctrl', 'c')
 time.sleep(0.5)
+progress.update(85, 'Dados de DT e CTE coletados')
+print('[AutoMDF] Dados coletados', flush=True)
 pyautogui.hotkey('alt', 'tab')
 time.sleep(0.5)
 pyautogui.hotkey('ctrl', 'f')
@@ -707,7 +710,7 @@ pyautogui.hotkey('ctrl', 'v')
 time.sleep(0.5)
 pyautogui.write(' NF: ', interval=0.10)
 time.sleep(0.5)
-_checkpoint(progress, 90, 'Campos de DT, CTE e NF atualizados')
+progress.update(90, 'Campos de DT, CTE e NF atualizados')
 print('[AutoMDF] Campos finais atualizados', flush=True)
 
 

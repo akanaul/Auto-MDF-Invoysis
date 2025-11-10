@@ -8,8 +8,8 @@ Automação do fluxo MDF-e com uma central moderna em PySide6. A aplicação ofe
 
 ## Principais recursos
 
-- Janela única em PySide6 com seleção de scripts, logs em tempo real e barra de progresso.
-- Indicador flutuante sempre visível para acompanhar o andamento das automações.
+- Janela única em PySide6 com seleção de scripts, logs em tempo real e barra de progresso linear que avança de 5% a 90% com checkpoints precisos.
+- Indicador flutuante sempre visível para acompanhar o andamento das automações com progresso em tempo real.
 - Painel de configurações em guia própria, com opção padrão para manter os tempos originais dos scripts e aba de temporizadores para ajustar pausa do PyAutoGUI, tentativas extras de foco e multiplicadores de `sleep` com lembrete visual do failsafe sempre ativo.
 - Bridge Qt intercepta alertas, prompts e *confirms* emitidos pelos scripts e mostra diálogos nativos.
 - Módulo `data/automation_focus.py` garante que o navegador correto esteja ativo.

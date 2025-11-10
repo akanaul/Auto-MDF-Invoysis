@@ -160,7 +160,7 @@ class AutomationService(QObject):
             focus.prepare_for_execution()
             focus.target_tab = config.tab_index
             focus.set_preferred_window_title(config.window_hint)
-            if not focus.ensure_browser_focus(allow_taskbar=True, preserve_tab=False):
+            if not focus.ensure_browser_focus(allow_taskbar=True, preserve_tab=True):
                 entry = record_event(
                     "focus_failure",
                     {

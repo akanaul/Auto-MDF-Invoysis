@@ -60,7 +60,7 @@ Não recomendado. O software precisa de foco exclusivo no navegador. Use outro c
 
 ### Quanto tempo leva uma automação?
 
-Depende do volume de dados e configurações de pausa. Pode levar de minutos a horas. Monitore a barra de progresso.
+Depende do volume de dados e configurações de pausa. Pode levar de minutos a horas. Monitore a barra de progresso precisa que avança linearmente de 5% a 90%.
 
 ### E se der erro durante a execução?
 

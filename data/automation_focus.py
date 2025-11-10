@@ -287,6 +287,7 @@ class BrowserFocusController:
             self._force_tab_on_focus = False
             return False
         with contextlib.suppress(Exception):
+            time.sleep(0.5)  # Delay para garantir que a janela está ativa
             pyautogui.hotkey("ctrl", str(self._target_tab))
             time.sleep(0.15)
             self._force_tab_on_focus = False

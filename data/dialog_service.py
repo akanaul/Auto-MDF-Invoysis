@@ -212,6 +212,8 @@ class DialogService:
                     self.setWindowFlag(Qt.WindowType.WindowCloseButtonHint, False)
                 self.setWindowFlag(Qt.WindowType.WindowContextHelpButtonHint, False)
                 self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)
+                # Mantém a janela sempre em primeiro plano
+                self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
 
             def reject(self) -> None:  # type: ignore[override]
                 if not self._allow_cancel:
@@ -243,6 +245,12 @@ class DialogService:
             def showEvent(self, event) -> None:  # type: ignore[override]
                 service._log("Prompt Qt showEvent acionado.", level="debug")
                 super().showEvent(event)
+                # Auto-focar no campo de entrada quando o diálogo aparecer
+                for child in self.findChildren(QLineEdit):
+                    if child.isVisible():
+                        child.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
+                        child.selectAll()
+                        break
 
             def hideEvent(self, event) -> None:  # type: ignore[override]
                 service._log("Prompt Qt hideEvent acionado.", level="debug")
@@ -440,6 +448,7 @@ class DialogService:
         parent: Optional["QWidget"],
     ) -> str:
         from PySide6.QtWidgets import QMessageBox
+        from PySide6.QtCore import Qt
 
         parent_widget = self._resolve_parent(parent)
         message_box = QMessageBox(parent_widget)
@@ -451,6 +460,8 @@ class DialogService:
         if ok_button is not None:
             ok_button.setText(button or "OK")
         message_box.setDefaultButton(QMessageBox.StandardButton.Ok)
+        # Mantém a janela sempre em primeiro plano
+        message_box.setWindowFlags(message_box.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
         self._exec_modal(message_box)
         return button or "OK"
 
@@ -475,6 +486,8 @@ class DialogService:
         dialog = QDialog(parent_widget)
         dialog.setWindowTitle(title or "Confirmação")
         dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        # Mantém a janela sempre em primeiro plano
+        dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
 
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(20, 16, 20, 16)

@@ -1,5 +1,16 @@
 # Changelog - Auto MDF InvoISys
 
+## 2025-11-09 - Correções de Barra de Progresso e Melhorias de Estabilidade
+
+- **Barra de Progresso Linear:** Corrigida regressão na barra de progresso que causava avanço não-linear (ex.: 65% → 30%). Padronizados checkpoints de progresso entre scripts ITU X DHL.py e SOROCABA X DHL.py com 17 pontos idênticos de 5% a 90%. Implementado salvamento automático de progresso em tempo real para atualização fluida da interface.
+- **Melhorias de Foco do Navegador:** Ajustado parâmetro `preserve_tab` para manter aba selecionada durante foco. Adicionado delay de 0.5s antes de troca de abas para estabilidade. Aumentado intervalo de retry de foco para 4 segundos.
+- **Tratamento de Failsafe:** Implementado handler específico para failsafe do PyAutoGUI, permitindo ao usuário escolher continuar ou parar a automação via diálogo.
+- **Desativação Automática de Caps Lock:** Adicionada função `disable_caps_lock()` para garantir entrada consistente de texto maiúsculo/minúsculo.
+- **Interface Sempre Visível:** Diálogos de prompt, alerta e confirmação agora ficam sempre no topo da tela para evitar perda de foco.
+- **Otimização de Performance:** Reduzido intervalo de atualização de progresso de 1000ms para 200ms para feedback mais responsivo. Desabilitado bridge ativo para evitar travamentos.
+- **Scripts de Teste:** Criados scripts de teste para validação de progresso em tempo real (`test_realtime_progress.py`, `test_realtime_save.py`, `test_tracing.py`, `test_progress_realtime.py`).
+- **Correções de Configuração:** Ajustado `focus_retry_seconds` de 3.0 para 4.0s. Habilitado `use_default_timers` por padrão para manter compatibilidade.
+
 ## 2025-11-08 - Otimizações de Código, Documentação Completa e Ajustes Empresariais
 
 - **Otimização de Código:** Adicionados helpers `_build_install_error_details` e `_build_missing_modules_details` em `AutoMDF-Start.py` para mensagens de erro mais claras e consistentes. Incluídos type hints em `install/install.py` para melhor manutenção.

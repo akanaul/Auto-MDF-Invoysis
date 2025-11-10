@@ -24,7 +24,7 @@ class ProgressManager:
     DEFAULT_FILE_PATH = DATA_DIR / DEFAULT_FILE_NAME
     PROGRESS_FILE = os.environ.get("MDF_PROGRESS_FILE", str(DEFAULT_FILE_PATH))
 
-    def __init__(self, progress_file: Optional[str] = None):
+    def __init__(self, progress_file: Optional[str] = None, auto_save: bool = False):
         self.progress_path = self._resolve_progress_path(progress_file)
         # Manter compatibilidade para consumidores que ainda consultam o atributo de classe
         ProgressManager.PROGRESS_FILE = str(self.progress_path)
@@ -42,6 +42,8 @@ class ProgressManager:
             "estimated_time_remaining": None,
         }
         self.lock = threading.Lock()
+        self.auto_save = auto_save
+        self._last_saved_percentage = 0
         self._save_progress()
 
     @classmethod
@@ -58,16 +60,19 @@ class ProgressManager:
         with self.lock:
             self.progress_data["status"] = "running"
             self.progress_data["percentage"] = 0
+            self.progress_data["current_step"] = "Automação iniciada"
             self.progress_data["total_steps"] = total_steps
             self.progress_data["current_step_number"] = 0
             self.progress_data["start_time"] = datetime.now().isoformat()
             self.progress_data["messages"] = []
             self.progress_data["errors"] = []
+            self._last_saved_percentage = 0
             self._save_progress()
 
-    def update(self, percentage: int, step: str, step_number: Optional[int] = None):
+    def update(self, percentage: int, step: str, step_number: Optional[int] = None, force_save: bool = False):
         """Atualiza o progresso."""
         with self.lock:
+            old_percentage = self.progress_data["percentage"]
             self.progress_data["percentage"] = max(0, min(100, percentage))
             self.progress_data["current_step"] = step
 
@@ -82,7 +87,19 @@ class ProgressManager:
                 remaining = rate * (100 - percentage)
                 self.progress_data["estimated_time_remaining"] = int(remaining)
 
+            # Salvar sempre que o percentual muda para permitir atualização em tempo real no overlay
+            if self.progress_data["percentage"] != old_percentage:
+                self._save_progress()
+                self._last_saved_percentage = self.progress_data["percentage"]
+            elif force_save:
+                self._save_progress()
+                self._last_saved_percentage = self.progress_data["percentage"]
+
+    def save_checkpoint(self):
+        """Salva um checkpoint do progresso atual no arquivo."""
+        with self.lock:
             self._save_progress()
+            self._last_saved_percentage = self.progress_data["percentage"]
 
     def add_log(self, message: str):
         """Adiciona mensagem de log."""
@@ -109,7 +126,7 @@ class ProgressManager:
                     "details": details,
                 }
             )
-            self._save_progress()
+            self.save_checkpoint()  # Sempre salvar em erro
 
     def pause(self):
         """Pausa o progresso."""
@@ -159,7 +176,7 @@ class ProgressManager:
                     "type": "error",
                 }
             )
-            self._save_progress()
+            self.save_checkpoint()  # Sempre salvar em erro
 
     def _save_progress(self):
         """Salva dados de progresso em arquivo JSON."""
@@ -227,7 +244,7 @@ def track_progress(step_name: str, step_number: Optional[int] = None):
 
 if __name__ == "__main__":
     # Exemplo de uso
-    pm = ProgressManager()
+    pm = ProgressManager(auto_save=True)  # Para demonstração, salvar sempre
     pm.start(total_steps=10)
 
     steps = [

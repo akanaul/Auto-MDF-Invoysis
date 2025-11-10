@@ -84,7 +84,7 @@ class ScriptRunner(QThread):
             return
 
         env = os.environ.copy()
-        env["MDF_BRIDGE_ACTIVE"] = "1"
+        # env["MDF_BRIDGE_ACTIVE"] = "1"  # Desabilitado para evitar travamentos
         env["MDF_BRIDGE_PREFIX"] = BRIDGE_PREFIX
         env["MDF_BRIDGE_ACK"] = BRIDGE_ACK
         env["MDF_BRIDGE_CANCEL"] = BRIDGE_CANCEL
