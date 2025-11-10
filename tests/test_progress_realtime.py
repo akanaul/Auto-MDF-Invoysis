@@ -5,6 +5,7 @@ import time
 from data.progress_manager import ProgressManager
 from data.script_runtime import update_progress_realtime
 
+
 def _run_progress_test(pm: ProgressManager) -> None:
     """Run the progress test loop."""
     for i in range(101):  # 0 to 100
@@ -16,6 +17,7 @@ def _run_progress_test(pm: ProgressManager) -> None:
             pm.save_checkpoint()
             print(f"Checkpoint saved at {i}%")
 
+
 def test_realtime_progress():
     """Test real-time progress updates with 1% increments."""
     pm = ProgressManager(auto_save=False)  # Não salvar automaticamente
@@ -26,6 +28,7 @@ def test_realtime_progress():
     _run_progress_test(pm)
 
     pm.complete("Test completed successfully")
+
 
 if __name__ == "__main__":
     test_realtime_progress()

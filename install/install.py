@@ -157,18 +157,11 @@ def main() -> int:
     return 0
 
 
-def _perform_installation(base_python: Path, args: argparse.Namespace, pip_extra: tuple[str, ...]) -> None:
+def _perform_installation(
+    base_python: Path, args: argparse.Namespace, pip_extra: tuple[str, ...]
+) -> None:
     if args.mode == "venv":
-        venv_path = Path(args.venv_path).resolve()
-        venv_python = ensure_virtualenv(base_python, venv_path)
-        upgrade_tooling(venv_python, extra_args=pip_extra)
-        install_requirements(venv_python, extra_args=pip_extra)
-        print(f"\nAmbiente virtual pronto em {venv_path}")
-        print("Para ativar:")
-        if is_windows():
-            print(f"    {venv_path / 'Scripts' / 'activate.bat'}")
-        else:
-            print(f"    source {venv_path / 'bin' / 'activate'}")
+        _setup_venv(base_python, args, pip_extra)
     elif args.mode == "user":
         upgrade_tooling(base_python, extra_args=pip_extra)
         install_requirements(base_python, extra_args=("--user", *pip_extra))
@@ -177,6 +170,22 @@ def _perform_installation(base_python: Path, args: argparse.Namespace, pip_extra
         upgrade_tooling(base_python, extra_args=pip_extra)
         install_requirements(base_python, extra_args=pip_extra)
         print("\nDependencias instaladas no ambiente atual.")
+
+
+def _setup_venv(
+    base_python: Path, args: argparse.Namespace, pip_extra: tuple[str, ...]
+) -> None:
+    """Set up virtual environment and install requirements."""
+    venv_path = Path(args.venv_path).resolve()
+    venv_python = ensure_virtualenv(base_python, venv_path)
+    upgrade_tooling(venv_python, extra_args=pip_extra)
+    install_requirements(venv_python, extra_args=pip_extra)
+    print(f"\nAmbiente virtual pronto em {venv_path}")
+    print("Para ativar:")
+    if is_windows():
+        print(f"    {venv_path / 'Scripts' / 'activate.bat'}")
+    else:
+        print(f"    source {venv_path / 'bin' / 'activate'}")
 
 
 if __name__ == "__main__":

@@ -213,7 +213,9 @@ class DialogService:
                 self.setWindowFlag(Qt.WindowType.WindowContextHelpButtonHint, False)
                 self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)
                 # Mantém a janela sempre em primeiro plano
-                self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
+                self.setWindowFlags(
+                    self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint
+                )
 
             def reject(self) -> None:  # type: ignore[override]
                 if not self._allow_cancel:
@@ -245,6 +247,7 @@ class DialogService:
             def showEvent(self, event) -> None:  # type: ignore[override]
                 service._log("Prompt Qt showEvent acionado.", level="debug")
                 super().showEvent(event)
+
                 # Auto-focar no campo de entrada quando o diálogo aparecer
                 def set_focus():
                     for child in self.findChildren(QLineEdit):
@@ -252,6 +255,7 @@ class DialogService:
                             child.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
                             child.selectAll()
                             break
+
                 QTimer.singleShot(0, set_focus)
 
             def hideEvent(self, event) -> None:  # type: ignore[override]
@@ -463,7 +467,9 @@ class DialogService:
             ok_button.setText(button or "OK")
         message_box.setDefaultButton(QMessageBox.StandardButton.Ok)
         # Mantém a janela sempre em primeiro plano
-        message_box.setWindowFlags(message_box.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
+        message_box.setWindowFlags(
+            message_box.windowFlags() | Qt.WindowType.WindowStaysOnTopHint
+        )
         self._exec_modal(message_box)
         return button or "OK"
 

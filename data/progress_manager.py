@@ -67,7 +67,13 @@ class ProgressManager:
             self._last_saved_percentage = 0
             self._save_progress()
 
-    def update(self, percentage: int, step: str, step_number: Optional[int] = None, force_save: bool = False):
+    def update(
+        self,
+        percentage: int,
+        step: str,
+        step_number: Optional[int] = None,
+        force_save: bool = False,
+    ):
         """Atualiza o progresso."""
         with self.lock:
             old_percentage = self.progress_data["percentage"]
@@ -195,7 +201,9 @@ class ProgressManager:
         return timestamp
 
     @classmethod
-    def read_progress(cls, progress_file: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def read_progress(
+        cls, progress_file: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
         """Lê dados de progresso do arquivo JSON."""
         progress_path = cls._resolve_progress_path(progress_file)
 

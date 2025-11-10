@@ -36,7 +36,9 @@ class ScriptRunner(QThread):
     process_started = Signal(Path)
     process_finished = Signal(int)
 
-    def __init__(self, python_executable: str, parent: Optional[QObject] = None) -> None:
+    def __init__(
+        self, python_executable: str, parent: Optional[QObject] = None
+    ) -> None:
         super().__init__(parent)
         self.python_executable = python_executable
         self._script_path: Optional[Path] = None
@@ -49,7 +51,9 @@ class ScriptRunner(QThread):
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
-    def start_script(self, script_path: Path, *, progress_file: Optional[Path] = None) -> bool:
+    def start_script(
+        self, script_path: Path, *, progress_file: Optional[Path] = None
+    ) -> bool:
         if self.isRunning():
             return False
         self._script_path = script_path
@@ -95,10 +99,16 @@ class ScriptRunner(QThread):
         pythonpath_components = [str(project_root), str(script_path.parent)]
         if existing_python_path := env.get("PYTHONPATH"):
             pythonpath_components.append(existing_python_path)
-        env["PYTHONPATH"] = os.pathsep.join(component for component in pythonpath_components if component)
+        env["PYTHONPATH"] = os.pathsep.join(
+            component for component in pythonpath_components if component
+        )
 
         try:
-            creationflags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' and hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+            creationflags = (
+                subprocess.CREATE_NO_WINDOW
+                if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW")
+                else 0
+            )
             # Security: command constructed from trusted Path objects (self.python_executable and script_path)
             process = subprocess.Popen(
                 [self.python_executable, "-u", str(script_path)],
@@ -134,7 +144,9 @@ class ScriptRunner(QThread):
                     try:
                         payload = json.loads(payload_json)
                     except json.JSONDecodeError as exc:
-                        self.log_message.emit(f"Bridge payload inválido: {exc} :: {payload_json}")
+                        self.log_message.emit(
+                            f"Bridge payload inválido: {exc} :: {payload_json}"
+                        )
                         self._write_response(BRIDGE_ACK)
                         continue
                     self.bridge_payload.emit(payload)
