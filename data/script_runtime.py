@@ -363,9 +363,6 @@ def update_progress_realtime(progress_manager: Any, percent: int, step: str) -> 
     progress_manager.add_log(step)
 
 
-def update_progress_realtime(progress_manager: Any, percent: int, step: str) -> None:
-    """Atualiza o progresso em tempo real sem forçar salvamento."""
-    progress_manager.update(percent, step, force_save=False)
 
 
 def abort(progress_manager: Any, message: str) -> None:
