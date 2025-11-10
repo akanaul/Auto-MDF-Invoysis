@@ -1,0 +1,64 @@
+{
+  "cSpell.language": "en,pt,pt-BR",
+  "cSpell.languageSettings": [
+    {
+      "languageId": "*",
+      "locale": "pt"
+    }
+  ],
+  "cSpell.dictionaries": ["en-US", "en-GB", "pt", "pt-br"],
+  "cSpell.enabledFileTypes": {
+    "gitignore": true
+  },
+  "cSpell.words": [
+    "aplicacao",
+    "Automacao",
+    "Automações",
+    "AutoMDF",
+    "AutoMDF-Start",
+    "AutoMDFStart",
+    "averbacao",
+    "averbação",
+    "dependências",
+    "dialogos",
+    "diálogos",
+    "excepthook",
+    "execucao",
+    "execuções",
+    "Frameless",
+    "HIGHDPI",
+    "hwnd",
+    "instalacao",
+    "Instalacao",
+    "instalacoes",
+    "Invoisys",
+    "InvoISys",
+    "lparam",
+    "LPARAM",
+    "Micropausas",
+    "padrao",
+    "pyautogui",
+    "PyAutoGUI",
+    "pygetwindow",
+    "PySide6",
+    "qapp",
+    "Qt",
+    "robos",
+    "robôs",
+    "selecao",
+    "seleção",
+    "sourcery",
+    "venv",
+    "winapi",
+    "windll",
+    "WINFUNCTYPE"
+  ],
+  "cSpell.ignorePaths": [
+    "**/.git/**",
+    "**/.venv/**",
+    "**/__pycache__/**",
+    "**/.mypy_cache/**",
+    "**/.ruff_cache/**"
+  ],
+  "python.analysis.autoImportCompletions": true
+}

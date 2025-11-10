@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.py[cod]
+logs/
+.flake8
+automation_progress.json
