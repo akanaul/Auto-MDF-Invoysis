@@ -11,7 +11,7 @@ from __future__ import annotations
 import contextlib
 import os
 import time
-from typing import Any, Optional
+from typing import Any, Optional, Callable
 
 _pyautogui: Any
 _pygetwindow: Any
@@ -26,10 +26,15 @@ try:
 except Exception:  # pragma: no cover - optional dependency
     _pygetwindow = None
 
+# Typing-friendly optional import: keep `load_settings` as an optional callable
+load_settings: Optional[Callable[[], Any]] = None
 try:
-    from data.automation_settings import load_settings
-except ImportError:  # pragma: no cover
-    load_settings = None
+    # Attempt to import the loader used in runtime. If it's unavailable
+    # we keep `load_settings` as None which is handled by callers.
+    from data.automation_settings import load_settings  # type: ignore
+except Exception:  # pragma: no cover
+    # Leave `load_settings` as None when the module isn't present.
+    pass
 
 pyautogui: Any = _pyautogui
 gw: Any = _pygetwindow
@@ -219,17 +224,14 @@ class BrowserFocusController:
     @staticmethod
     def _resolve_target_tab() -> int:
         # Primeiro verifica variável de ambiente específica
-        raw = os.environ.get("MDF_BROWSER_TAB", "").strip()
-        if raw:
+        if raw := os.environ.get("MDF_BROWSER_TAB", "").strip():
             return BrowserFocusController._normalize_tab(raw)
 
         # Tenta carregar das configurações
         if load_settings is not None:
-            try:
+            with contextlib.suppress(Exception):
                 settings = load_settings()
                 return BrowserFocusController._normalize_tab(settings.averbacao_tab)
-            except Exception:
-                pass
 
         # Fallback para aba 4 (padrão para averbação)
         return 4
@@ -309,9 +311,7 @@ class BrowserFocusController:
             time.sleep(0.5)  # Delay para garantir que a janela está ativa
 
             # Verifica se estamos em um workspace do Edge
-            is_workspace = self._is_edge_workspace_active()
-
-            if is_workspace:
+            if self._is_edge_workspace_active():
                 # Em workspaces, pode ser necessário usar Ctrl+Tab múltiplas vezes
                 # ou ajustar a estratégia de navegação
                 self._switch_tab_in_workspace()
@@ -579,7 +579,6 @@ class BrowserFocusController:
                     return True
         return False
 
-
     def _is_edge_workspace_active(self) -> bool:
         """Verifica se o Edge está usando workspaces baseado no título da janela."""
         if gw is None:
@@ -597,7 +596,7 @@ class BrowserFocusController:
                 "workspaces",
                 "workspace",
                 " - workspace",
-                "workspace - "
+                "workspace - ",
             ]
             return any(indicator in title for indicator in workspace_indicators)
         except Exception:
