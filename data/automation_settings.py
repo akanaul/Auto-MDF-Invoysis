@@ -80,6 +80,7 @@ class AutomationSettings:
     sleep_scale_medium: float = 1.0
     sleep_scale_long: float = 1.0
     use_default_timers: bool = True
+    averbacao_tab: int = 4  # Aba onde está o site de averbação
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "AutomationSettings":

@@ -151,10 +151,9 @@ disable_caps_lock()
 
 #---------------------------------------------------------------
 
-# IR PARA 3ª ABA DO NAVEGADOR
+# IR PARA 3ª ABA DO NAVEGADOR (INVOISYS - PARA ABRIR FORMULÁRIO)
 switch_browser_tab(3)
 time.sleep(1)
-
 
 #-----------------------------------------------------#-----------------------------------------------------------------#
 #-----------------------------------------------------#-----------------------------------------------------------------#
@@ -562,7 +561,10 @@ print('[AutoMDF] Informações adicionais concluídas', flush=True)
 #-----------------------------------------------------#-----------------------------------------------------------------#
 #						AVERBAÇÃO								#
 
-	
+# IR PARA 4ª ABA DO NAVEGADOR (AVERBAÇÃO)
+switch_browser_tab(4)
+time.sleep(1)
+
 pyautogui.hotkey('ctrl', 'shift', 'a')
 time.sleep(0.5)
 pyautogui.write('ATM', interval=0.10)

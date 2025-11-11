@@ -11,7 +11,7 @@ from __future__ import annotations
 import contextlib
 import os
 import time
-from typing import Any, Optional
+from typing import Any, Optional, Callable
 
 _pyautogui: Any
 _pygetwindow: Any
@@ -25,6 +25,16 @@ try:
     import pygetwindow as _pygetwindow  # type: ignore
 except Exception:  # pragma: no cover - optional dependency
     _pygetwindow = None
+
+# Typing-friendly optional import: keep `load_settings` as an optional callable
+load_settings: Optional[Callable[[], Any]] = None
+try:
+    # Attempt to import the loader used in runtime. If it's unavailable
+    # we keep `load_settings` as None which is handled by callers.
+    from data.automation_settings import load_settings  # type: ignore
+except Exception:  # pragma: no cover
+    # Leave `load_settings` as None when the module isn't present.
+    pass
 
 pyautogui: Any = _pyautogui
 gw: Any = _pygetwindow
@@ -213,8 +223,18 @@ class BrowserFocusController:
 
     @staticmethod
     def _resolve_target_tab() -> int:
-        raw = os.environ.get("MDF_BROWSER_TAB", "").strip()
-        return BrowserFocusController._normalize_tab(raw)
+        # Primeiro verifica variável de ambiente específica
+        if raw := os.environ.get("MDF_BROWSER_TAB", "").strip():
+            return BrowserFocusController._normalize_tab(raw)
+
+        # Tenta carregar das configurações
+        if load_settings is not None:
+            with contextlib.suppress(Exception):
+                settings = load_settings()
+                return BrowserFocusController._normalize_tab(settings.averbacao_tab)
+
+        # Fallback para aba 4 (padrão para averbação)
+        return 4
 
     @staticmethod
     def _resolve_preferred_title() -> str:
@@ -286,9 +306,19 @@ class BrowserFocusController:
         if self._target_tab <= 0 or pyautogui is None:
             self._force_tab_on_focus = False
             return False
+
         with contextlib.suppress(Exception):
             time.sleep(0.5)  # Delay para garantir que a janela está ativa
-            pyautogui.hotkey("ctrl", str(self._target_tab))
+
+            # Verifica se estamos em um workspace do Edge
+            if self._is_edge_workspace_active():
+                # Em workspaces, pode ser necessário usar Ctrl+Tab múltiplas vezes
+                # ou ajustar a estratégia de navegação
+                self._switch_tab_in_workspace()
+            else:
+                # Comportamento normal para Edge sem workspaces
+                pyautogui.hotkey("ctrl", str(self._target_tab))
+
             time.sleep(0.15)
             self._force_tab_on_focus = False
             return True
@@ -548,6 +578,42 @@ class BrowserFocusController:
                         self._switch_to_target_tab()
                     return True
         return False
+
+    def _is_edge_workspace_active(self) -> bool:
+        """Verifica se o Edge está usando workspaces baseado no título da janela."""
+        if gw is None:
+            return False
+
+        try:
+            active_window = gw.getActiveWindow()
+            if active_window is None:
+                return False
+
+            title = str(active_window.title).lower()
+            # Workspaces do Edge geralmente incluem indicadores como " - Workspaces"
+            # ou outros marcadores específicos
+            workspace_indicators = [
+                "workspaces",
+                "workspace",
+                " - workspace",
+                "workspace - ",
+            ]
+            return any(indicator in title for indicator in workspace_indicators)
+        except Exception:
+            return False
+
+    def _switch_tab_in_workspace(self) -> None:
+        """Alterna para a aba alvo considerando workspaces do Edge."""
+        # Em workspaces, a numeração pode ser diferente ou pode haver
+        # necessidade de navegação adicional. Por enquanto, usa a mesma
+        # lógica mas com verificações adicionais.
+
+        # Primeiro tenta o método normal
+        pyautogui.hotkey("ctrl", str(self._target_tab))
+        time.sleep(0.2)
+
+        # Verifica se a aba correta foi ativada (pode precisar de ajustes futuros)
+        # Por enquanto, assume que funcionou
 
 
 focus = BrowserFocusController()

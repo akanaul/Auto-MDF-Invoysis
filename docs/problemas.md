@@ -52,6 +52,15 @@ Este guia ajuda a resolver problemas comuns ao usar o Auto MDF InvoISys. Se o pr
   3. Na aba "Configurações", ajuste "Posição do Edge" (ex.: 1 para primeira posição).
   4. Certifique-se de estar logado no Invoisys.
 
+### Automação vai para aba errada do navegador
+
+- **Causa:** Configuração de abas não corresponde ao esperado pelo script ou uso de workspaces do Edge.
+- **Solução:**
+  1. Na aba "Configurações", ajuste "Aba do site de averbação" para o número correto da aba.
+  2. Certifique-se de que o Invoisys está nas abas 1-3 e o site de averbação na aba configurada.
+  3. O script irá automaticamente: ir para aba 3 para abrir o formulário MDF-e, depois para a aba de averbação para fazer a averbação.
+  4. Se usar workspaces do Edge, configure a aba correta onde está o site de averbação dentro do workspace.
+
 ### "Foco perdido" ou "Elemento não encontrado"
 
 - **Causa:** Janela do navegador mudou ou site carregou lentamente.

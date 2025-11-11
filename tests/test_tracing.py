@@ -1,21 +1,26 @@
 #!/usr/bin/env python3
 """Teste do tracing de linhas com simulação de prompt."""
 
+from __future__ import annotations
+
+from pathlib import Path
 import sys
 import time
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-# Adiciona o projeto ao path
+# Adiciona o projeto ao path antes de importações locais
 project_root = Path(__file__).resolve().parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from data.progress_manager import (
-    ProgressManager,
-)  # sourcery skip: module-level-import-not-at-top
+
+if TYPE_CHECKING:
+    # Import apenas para tipos em tempo de checagem; evita import em nível de
+    # módulo que requer modificação do sys.path.
+    from data.progress_manager import ProgressManager
 
 
-def _print_progress(progress: ProgressManager, message: str) -> None:
+def _print_progress(progress: "ProgressManager", message: str) -> None:
     """Print current progress with a message."""
     print(message)
     print(
@@ -23,7 +28,7 @@ def _print_progress(progress: ProgressManager, message: str) -> None:
     )
 
 
-def _simulate_lines(progress: ProgressManager, count: int, prefix: str) -> None:
+def _simulate_lines(progress: "ProgressManager", count: int, prefix: str) -> None:
     """Simulate execution of lines with progress updates."""
     for i in range(count):
         time.sleep(0.5)
@@ -38,6 +43,10 @@ def simulate_script_execution():
     """Simula a execução de um script com prompt."""
     print("=== TESTE DE TRACING DE LINHAS ===")
     print("Iniciando simulação de script com prompt...")
+
+    # Importa localmente para evitar import em nível de módulo e a
+    # consequente advertência sobre import não estar no topo.
+    from data.progress_manager import ProgressManager
 
     progress = ProgressManager(auto_save=True)
     progress.start(total_steps=100)
