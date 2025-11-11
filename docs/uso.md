@@ -50,6 +50,7 @@ Na aba "Configurações":
 - **Usar Tempos Padrão:** Deixe marcado para usar configurações recomendadas.
 - **Temporizadores:** Ajuste pausas se a automação estiver muito rápida ou lenta (ex.: aumente "Pausa PyAutoGUI" se houver erros).
 - **Posição do Edge:** Configure onde o Edge fica na barra de tarefas (ex.: posição 1, 2, etc.).
+- **Aba do site de averbação:** Configure qual aba contém o site de averbação (padrão: 4). Ajuste se usar workspaces do Edge ou configuração personalizada.
 
 Salve as mudanças clicando em "Aplicar".
 
@@ -62,6 +63,8 @@ Salve as mudanças clicando em "Aplicar".
 
 - Sempre faça login no Invoisys antes de executar, se necessário.
 - Verifique se o Edge está fechado antes de iniciar.
+- Configure o navegador com as abas corretas: mantenha o Invoisys nas primeiras 3 abas e o site de averbação na aba configurada (padrão: aba 4).
+- O script irá automaticamente navegar entre as abas: aba 3 para preencher o formulário MDF-e e aba 4 para averbação.
 - Não execute múltiplas automações ao mesmo tempo.
 - Se algo der errado, pare imediatamente e consulte os logs.
 

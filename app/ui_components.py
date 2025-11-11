@@ -322,6 +322,7 @@ class AutomationSettingsPanel(QGroupBox):
         self._short_scale_spin.valueChanged.connect(self._notify_change)
         self._medium_scale_spin.valueChanged.connect(self._notify_change)
         self._long_scale_spin.valueChanged.connect(self._notify_change)
+        self._averbacao_tab_spin.valueChanged.connect(self._notify_change)
         self._short_threshold_spin.valueChanged.connect(self._handle_threshold_change)
         self._medium_threshold_spin.valueChanged.connect(self._handle_threshold_change)
         self._use_default_timers_checkbox.toggled.connect(
@@ -342,6 +343,7 @@ class AutomationSettingsPanel(QGroupBox):
         self._short_scale_spin.setValue(float(settings.sleep_scale_short))
         self._medium_scale_spin.setValue(float(settings.sleep_scale_medium))
         self._long_scale_spin.setValue(float(settings.sleep_scale_long))
+        self._averbacao_tab_spin.setValue(int(settings.averbacao_tab))
         self._use_default_timers_checkbox.blockSignals(True)
         self._use_default_timers_checkbox.setChecked(bool(settings.use_default_timers))
         self._use_default_timers_checkbox.blockSignals(False)
@@ -363,6 +365,7 @@ class AutomationSettingsPanel(QGroupBox):
             sleep_scale_medium=float(self._medium_scale_spin.value()),
             sleep_scale_long=float(self._long_scale_spin.value()),
             use_default_timers=self._use_default_timers_checkbox.isChecked(),
+            averbacao_tab=int(self._averbacao_tab_spin.value()),
         )
 
     def _notify_change(self, _value: object) -> None:
@@ -417,6 +420,18 @@ class AutomationSettingsPanel(QGroupBox):
         )
         layout.addLayout(
             self._make_row("Intervalo entre tentativas extras:", self._retry_timeout)
+        )
+
+        # Configuração da aba de averbação
+        self._averbacao_tab_spin = QSpinBox()
+        self._averbacao_tab_spin.setRange(1, 9)
+        self._averbacao_tab_spin.setSingleStep(1)
+        self._averbacao_tab_spin.setToolTip(
+            "Número da aba onde está o site de averbação. Ajuste se usar workspaces do Edge."
+        )
+
+        layout.addLayout(
+            self._make_row("Aba do site de averbação:", self._averbacao_tab_spin)
         )
 
         self._failsafe_hint = QLabel(
