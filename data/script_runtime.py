@@ -10,11 +10,22 @@ catálogo de scripts.
 from __future__ import annotations
 
 import os
+import re
 import sys
 import time
 from contextlib import suppress
 from datetime import datetime
 from typing import Any, Optional, Sequence
+
+try:
+    import pyautogui
+except ImportError:  # pragma: no cover - pyautogui may be missing
+    pyautogui = None  # type: ignore[assignment]
+
+try:
+    import pyperclip
+except ImportError:  # pragma: no cover - pyperclip may be missing
+    pyperclip = None  # type: ignore[assignment]
 
 try:
     from .automation_focus import focus
@@ -553,6 +564,172 @@ def check_image_present(
         return False
 
 
+def extract_cte_number() -> Optional[str]:
+    """Extrai automaticamente o número da CTE do conteúdo copiado da tela.
+
+    Esta função navega para o campo apropriado, copia o conteúdo,
+    procura pela linha "100 - Autorizado o uso do CT-e.N" e extrai
+    o número de 6 dígitos que segue essa frase.
+
+    Returns:
+        O número da CTE (6 dígitos) se encontrado, None caso contrário
+    """
+    if pyautogui is None:
+        _log_event("PyAutoGUI não está disponível", level="error")
+        return None
+
+    if pyperclip is None:
+        _log_event("Pyperclip não está disponível", level="error")
+        return None
+
+    try:
+        _log_event("Iniciando extração automática do número da CTE")
+
+        # NOTA: Esta função assume que já estamos na aba correta (primeira aba)
+        # O script já fez alt+tab para vir para cá antes de chamar esta função
+        _log_event("Assumindo que já estamos na primeira aba (script fez alt+tab)")
+
+        # Limpa a área de transferência primeiro
+        pyperclip.copy("")
+        time.sleep(0.2)
+
+        # Não faz switch_browser_tab(1) pois já estamos na aba correta
+        # Apenas aguarda um pouco para garantir que a aba está carregada
+        time.sleep(0.5)
+
+        # Tenta copiar o conteúdo diretamente (já que estamos na aba correta)
+        _log_event("Tentando cópia direta do conteúdo da primeira aba")
+        pyautogui.hotkey('ctrl', 'a')
+        time.sleep(0.3)
+        pyautogui.hotkey('ctrl', 'c')
+        time.sleep(1)
+
+        conteudo = pyperclip.paste()
+        _log_event(f"Conteúdo copiado da primeira aba: {len(conteudo)} caracteres")
+        _log_event(f"Conteúdo: {repr(conteudo[:300])}...")
+
+        # Se não há conteúdo suficiente, tenta navegação mínima
+        if not conteudo.strip() or len(conteudo.strip()) < 20:
+            _log_event("Conteúdo insuficiente, tentando navegação com 1 tab")
+
+            # Limpa e tenta com 1 tab
+            pyperclip.copy("")
+            time.sleep(0.1)
+
+            pyautogui.press('tab')
+            time.sleep(0.3)
+
+            pyautogui.hotkey('ctrl', 'a')
+            time.sleep(0.3)
+            pyautogui.hotkey('ctrl', 'c')
+            time.sleep(1)
+
+            conteudo = pyperclip.paste()
+            _log_event(f"Conteúdo após 1 tab: {len(conteudo)} caracteres")
+            _log_event(f"Conteúdo: {repr(conteudo[:300])}...")
+
+        # Análise do conteúdo
+        linhas = conteudo.splitlines()
+        _log_event(f"Linhas encontradas: {len(linhas)}")
+
+        # Debug: mostra linhas que contêm palavras-chave
+        for i, linha in enumerate(linhas):
+            if any(keyword in linha for keyword in ["CT-e", "Autorizado", "100"]):
+                _log_event(f"Linha relevante {i}: {repr(linha)}")
+
+        # Procura a linha que contém "100 - Autorizado o uso do CT-e.N"
+        numero_cte = None
+        for i, linha in enumerate(linhas):
+            if "100 - Autorizado o uso do CT-e.N" in linha:
+                _log_event(f"Encontrada linha com '100 - Autorizado': {repr(linha)}")
+                # Tenta extrair o número de 6 dígitos após essa frase
+                match = re.search(r"100\s*-\s*Autorizado o uso do CT-e\.N[^\d]*(\d{6})", linha)
+                if match:
+                    numero_cte = match.group(1)
+                    _log_event(f"Número da CTE encontrado: {numero_cte}")
+                    break
+                else:
+                    _log_event(f"Regex não encontrou número na linha: {repr(linha)}")
+
+        # Se não encontrou, tenta variações mais flexíveis
+        if not numero_cte:
+            _log_event("Tentando variações mais flexíveis...")
+            for i, linha in enumerate(linhas):
+                if "CT-e" in linha and re.search(r'\d{6}', linha):
+                    _log_event(f"Encontrada linha com 'CT-e': {repr(linha)}")
+                    matches = re.findall(r'\d{6}', linha)
+                    if matches:
+                        numero_cte = matches[0]
+                        _log_event(f"Número da CTE encontrado (flexível): {numero_cte}")
+                        break
+
+        # Copia o resultado para a área de transferência se encontrado
+        if numero_cte:
+            pyperclip.copy(numero_cte)
+            _log_event("Número da CTE copiado para a área de transferência")
+            return numero_cte
+        else:
+            _log_event("Não foi possível localizar o número do CT-e", level="warning")
+            return None
+
+        # Se ainda não temos conteúdo relevante, tenta uma abordagem diferente
+        if not conteudo.strip() or len(conteudo.strip()) < 10:
+            _log_event("Tentando abordagem alternativa: foco no campo e cópia direta")
+            # Tenta clicar e copiar diretamente
+            pyautogui.hotkey('ctrl', 'a')
+            time.sleep(0.2)
+            pyautogui.hotkey('ctrl', 'c')
+            time.sleep(0.5)
+            conteudo = pyperclip.paste()
+            _log_event(f"Conteúdo alternativo: {repr(conteudo[:300])}...")
+
+        # Divide o conteúdo em linhas
+        linhas = conteudo.splitlines()
+        _log_event(f"Linhas encontradas: {len(linhas)}")
+
+        # Procura a linha que contém "100 - Autorizado o uso do CT-e.N"
+        numero_cte = None
+        for i, linha in enumerate(linhas):
+            _log_event(f"Linha {i}: {repr(linha)}")
+            if "100 - Autorizado o uso do CT-e.N" in linha:
+                _log_event(f"Encontrada linha com '100 - Autorizado': {repr(linha)}")
+                # Tenta extrair o número de 6 dígitos após essa frase
+                match = re.search(r"100\s*-\s*Autorizado o uso do CT-e\.N[^\d]*(\d{6})", linha)
+                if match:
+                    numero_cte = match.group(1)
+                    _log_event(f"Número da CTE encontrado: {numero_cte}")
+                    break
+                else:
+                    _log_event(f"Regex não encontrou número na linha: {repr(linha)}")
+
+        # Se não encontrou com o texto exato, tenta variações
+        if not numero_cte:
+            _log_event("Tentando variações do texto...")
+            for i, linha in enumerate(linhas):
+                # Procura por "CT-e" seguido de números
+                if "CT-e" in linha and re.search(r'\d{6}', linha):
+                    _log_event(f"Encontrada linha com 'CT-e': {repr(linha)}")
+                    # Tenta extrair qualquer sequência de 6 dígitos
+                    matches = re.findall(r'\d{6}', linha)
+                    if matches:
+                        numero_cte = matches[0]  # Pega o primeiro número de 6 dígitos
+                        _log_event(f"Número da CTE encontrado (variação): {numero_cte}")
+                        break
+
+        # Copia o resultado para a área de transferência se encontrado
+        if numero_cte:
+            pyperclip.copy(numero_cte)
+            _log_event("Número da CTE copiado para a área de transferência")
+            return numero_cte
+        else:
+            _log_event("Não foi possível localizar o número do CT-e", level="warning")
+            return None
+
+    except Exception as e:
+        _log_event(f"Erro durante extração da CTE: {e}", level="error")
+        return None
+
+
 __all__ = [
     "DEFAULT_TOTAL_STEPS",
     "abort",
@@ -564,6 +741,7 @@ __all__ = [
     "configure_stdio",
     "diagnose_image_detection",
     "ensure_browser_focus",
+    "extract_cte_number",
     "prompt_topmost",
     "register_exception_handler",
     "switch_browser_tab",

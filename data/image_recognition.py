@@ -104,7 +104,7 @@ def is_image_present(
 
 def wait_for_invoisys_form(
     timeout: float = 15.0,
-    confidence: float = 0.8,
+    confidence: float = 0.7,
 ) -> bool:
     """Aguarda o carregamento do formulário MDF-e do Invoisys.
 
@@ -114,7 +114,7 @@ def wait_for_invoisys_form(
 
     Args:
         timeout: Tempo máximo para aguardar em segundos
-        confidence: Confiança mínima para reconhecimento (0.0-1.0, padrão 0.8)
+        confidence: Confiança mínima para reconhecimento (0.0-1.0, padrão 0.7)
                    Nota: Valor alto necessário para precisão na detecção
 
     Returns:
@@ -147,7 +147,7 @@ def wait_for_invoisys_form(
 
 def wait_for_page_reload_and_form(
     timeout: float = 15.0,
-    confidence: float = 0.8,
+    confidence: float = 0.7,
 ) -> bool:
     """Aguarda a página ser recarregada e depois o formulário MDF-e aparecer.
 
@@ -158,7 +158,7 @@ def wait_for_page_reload_and_form(
 
     Args:
         timeout: Tempo máximo para aguardar em segundos
-        confidence: Confiança mínima para reconhecimento (0.0-1.0, padrão 0.8)
+        confidence: Confiança mínima para reconhecimento (0.0-1.0, padrão 0.7)
 
     Returns:
         True se o formulário foi detectado após recarregamento, False caso contrário

@@ -28,6 +28,7 @@ try:
         wait_for_form_load,
         wait_for_invoisys_form,
         wait_for_page_reload_and_form,
+        extract_cte_number,
     )
 except ModuleNotFoundError:
     PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -50,6 +51,7 @@ except ModuleNotFoundError:
         wait_for_form_load,
         wait_for_invoisys_form,
         wait_for_page_reload_and_form,
+        extract_cte_number,
     )
 
 pyautogui = cast(Any, pyautogui)
@@ -716,15 +718,35 @@ pyautogui.hotkey('ctrl', 'v')
 time.sleep(0.5)
 pyautogui.write(' CTE: ', interval=0.10)
 time.sleep(0.5)
-pyautogui.hotkey('alt', 'tab')
+
+# NAVEGAÇÃO PARA EXTRAÇÃO DA CTE
+print('[AutoMDF] Navegando para primeira aba para extrair CTE...', flush=True)
+pyautogui.hotkey('alt', 'tab')  # Vai para primeira aba (resultado da CTE)
+time.sleep(1.0)  # Tempo para alternar de aba
+
+# EXTRAÇÃO AUTOMÁTICA DO NÚMERO DA CTE
+print('[AutoMDF] Extraindo número da CTE automaticamente...', flush=True)
+numero_cte = extract_cte_number()
+if numero_cte:
+    print(f'[AutoMDF] ✅ Número da CTE extraído: {numero_cte}', flush=True)
+else:
+    print('[AutoMDF] ❌ ERRO: Não foi possível extrair o número da CTE automaticamente', flush=True)
+    print('[AutoMDF] Encerrando automação devido à falha na extração da CTE', flush=True)
+    progress.update(100, 'ERRO: Falha na extração da CTE')
+    alert_topmost('ERRO: Não foi possível extrair o número da CTE. Verifique se a página está correta.')
+    sys.exit(1)
+
+# VOLTA PARA A TERCEIRA ABA (FORMULÁRIO MDF-E)
+print('[AutoMDF] Voltando para terceira aba para colar a CTE...', flush=True)
+pyautogui.hotkey('alt', 'tab')  # Volta para terceira aba (formulário)
+time.sleep(1.0)  # Tempo para alternar de aba
+
+# ALERTA (mantido para consistência, mas agora a CTE já foi extraída)
+alert_topmost('CTE extraído automaticamente. Inclua a NF e os dados do motorista')
 time.sleep(0.5)
 
-#ALERTA
-alert_topmost('Copie o número do CT-E')
-time.sleep(0.5)
-
-pyautogui.hotkey('alt', 'tab')
-time.sleep(0.5)
+# COLA O NÚMERO DA CTE
+print('[AutoMDF] Colando número da CTE no formulário...', flush=True)
 pyautogui.hotkey('ctrl', 'v')
 time.sleep(0.5)
 pyautogui.write(' NF: ', interval=0.10)
