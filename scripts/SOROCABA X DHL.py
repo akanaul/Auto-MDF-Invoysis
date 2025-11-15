@@ -305,7 +305,7 @@ for _ in range(2):
 opcao = confirm_topmost(
     text='Selecione o código NCM ou escolha "Outro código" para digitar manualmente:',
     title='Escolha de NCM',
-    buttons=['19041000', '19059090', '18069000', '20098921', '22029900', '30005980', 'Outro código', 'Cancelar']
+    buttons=['19041000', '19059090', '20052000', 'Outro código', 'Cancelar']
 )
 
 if opcao == 'Cancelar':
