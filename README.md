@@ -4,7 +4,7 @@ Automação do fluxo MDF-e com uma central moderna em PySide6. A aplicação ofe
 
 **📚 Documentação Completa:** Para guias detalhados de instalação, uso e solução de problemas, consulte a pasta `docs/` com documentação completa em português para usuários finais.
 
-**✨ Melhorias Recentes:** Código otimizado com type hints, tratamento de erros aprimorado, instalação automática via launcher, e documentação completa para facilitar o uso.
+**✨ Melhorias Recentes:** Código otimizado com type hints, tratamento de erros aprimorado, instalação automática via launcher, reconhecimento automático de formulários MDF-e via imagem, e documentação completa para facilitar o uso.
 
 ## Principais recursos
 
@@ -12,6 +12,7 @@ Automação do fluxo MDF-e com uma central moderna em PySide6. A aplicação ofe
 - Indicador flutuante sempre visível para acompanhar o andamento das automações com progresso em tempo real.
 - Painel de configurações em guia própria, com opção padrão para manter os tempos originais dos scripts e aba de temporizadores para ajustar pausa do PyAutoGUI, tentativas extras de foco e multiplicadores de `sleep` com lembrete visual do failsafe sempre ativo.
 - Bridge Qt intercepta alertas, prompts e *confirms* emitidos pelos scripts e mostra diálogos nativos.
+- Reconhecimento automático de formulários MDF-e via imagem, eliminando esperas manuais e alertas intrusivos.
 - Módulo `data/automation_focus.py` garante que o navegador correto esteja ativo.
 - `ProgressManager` em `data/progress_manager.py` grava estado em `data/automation_progress.json` para feedback constante.
 - Cada execução gera logs dedicados em `logs/` e protege contra execuções simultâneas.

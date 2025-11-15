@@ -1,5 +1,15 @@
 # Changelog - Auto MDF InvoISys
 
+## 2025-11-14 - Reconhecimento Automático de Formulário MDF-e
+
+- **Reconhecimento de Imagem:** Implementado sistema automático de detecção de carregamento do formulário MDF-e do Invoisys usando reconhecimento de imagem. Substituído processo manual de alertas por detecção inteligente que aguarda até 30 segundos pela imagem de referência.
+- **Nova Pasta de Imagens:** Criada pasta `img/` para armazenar imagens de reconhecimento. Movida imagem `recon.png` da pasta temporária `tests/Implement/` para localização definitiva.
+- **Módulo de Reconhecimento:** Criado `data/image_recognition.py` com funções `wait_for_invoisys_form()`, `wait_for_image_on_screen()` e `check_image_present()` para detecção automática de elementos visuais.
+- **Integração com Scripts:** Atualizados scripts `ITU X DHL.py` e `SOROCABA X DHL.py` para usar reconhecimento automático em vez de alertas manuais. Adicionada função `wait_for_form_load()` ao `script_runtime.py`.
+- **Dependências Atualizadas:** Adicionadas bibliotecas `Pillow` e `opencv-python` ao `requirements.txt` para suporte ao reconhecimento de imagem.
+- **Limpeza de Código:** Removida pasta `tests/Implement/` do projeto e adicionada ao `.gitignore` para manter repositório limpo.
+- **Compatibilidade:** Sistema mantém funcionamento normal se bibliotecas de imagem não estiverem disponíveis, caindo graciosamente para comportamento anterior.
+
 ## 2025-11-09 - Correções de Barra de Progresso e Melhorias de Estabilidade
 
 - **Barra de Progresso Linear:** Corrigida regressão na barra de progresso que causava avanço não-linear (ex.: 65% → 30%). Padronizados checkpoints de progresso entre scripts ITU X DHL.py e SOROCABA X DHL.py com 17 pontos idênticos de 5% a 90%. Implementado salvamento automático de progresso em tempo real para atualização fluida da interface.

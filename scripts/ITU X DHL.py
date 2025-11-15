@@ -25,6 +25,10 @@ try:
         prompt_topmost,
         register_exception_handler,
         switch_browser_tab,
+        wait_for_form_load,
+        wait_for_invoisys_form,
+        wait_for_page_reload_and_form,
+        extract_cte_number,
     )
 except ModuleNotFoundError:
     PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -44,6 +48,10 @@ except ModuleNotFoundError:
         prompt_topmost,
         register_exception_handler,
         switch_browser_tab,
+        wait_for_form_load,
+        wait_for_invoisys_form,
+        wait_for_page_reload_and_form,
+        extract_cte_number,
     )
 
 pyautogui = cast(Any, pyautogui)
@@ -172,9 +180,13 @@ pyautogui.press('esc')
 pyautogui.press('enter')
 #---------------------------------------------------------------
 
-# ALERTA
-alert_topmost('Aguarde o formulário abrir.')
-time.sleep(2)
+# AGUARDAR PÁGINA RECARREGAR E FORMULÁRIO CARREGAR (SEQUENCIAL)
+print('[AutoMDF] Aguardando recarregamento da página e carregamento do formulário MDF-e...', flush=True)
+if wait_for_page_reload_and_form(timeout=15.0):
+    print('[AutoMDF] Formulário MDF-e detectado após recarregamento da página!', flush=True)
+else:
+    raise RuntimeError("Formulário MDF-e não foi detectado após recarregamento da página (15s). Verifique se o sistema Invoisys está funcionando corretamente.")
+
 progress.update(25, 'Formulário MDF-e aberto')
 #---------------------------------------------------------------
 
@@ -295,7 +307,7 @@ for _ in range(2):
 opcao = confirm_topmost(
     text='Selecione o código NCM ou escolha "Outro código" para digitar manualmente:',
     title='Escolha de NCM',
-    buttons=['19041000', '19059090', '18069000', '20098921', '22029900', '30005980', 'Outro código', 'Cancelar']
+    buttons=['19041000', '19059090', '20052000', 'Outro código', 'Cancelar']
 )
 
 if opcao == 'Cancelar':
@@ -701,15 +713,35 @@ pyautogui.hotkey('ctrl', 'v')
 time.sleep(0.5)
 pyautogui.write(' CTE: ', interval=0.10)
 time.sleep(0.5)
-pyautogui.hotkey('alt', 'tab')
+
+# NAVEGAÇÃO PARA EXTRAÇÃO DA CTE
+print('[AutoMDF] Navegando para primeira aba para extrair CTE...', flush=True)
+pyautogui.hotkey('alt', 'tab')  # Vai para primeira aba (resultado da CTE)
+time.sleep(1.0)  # Tempo para alternar de aba
+
+# EXTRAÇÃO AUTOMÁTICA DO NÚMERO DA CTE
+print('[AutoMDF] Extraindo número da CTE automaticamente...', flush=True)
+numero_cte = extract_cte_number()
+if numero_cte:
+    print(f'[AutoMDF] ✅ Número da CTE extraído: {numero_cte}', flush=True)
+else:
+    print('[AutoMDF] ❌ ERRO: Não foi possível extrair o número da CTE automaticamente', flush=True)
+    print('[AutoMDF] Encerrando automação devido à falha na extração da CTE', flush=True)
+    progress.update(100, 'ERRO: Falha na extração da CTE')
+    alert_topmost('ERRO: Não foi possível extrair o número da CTE. Verifique se a página está correta.')
+    sys.exit(1)
+
+# VOLTA PARA A TERCEIRA ABA (FORMULÁRIO MDF-E)
+print('[AutoMDF] Voltando para terceira aba para colar a CTE...', flush=True)
+pyautogui.hotkey('alt', 'tab')  # Volta para terceira aba (formulário)
+time.sleep(1.0)  # Tempo para alternar de aba
+
+# ALERTA (mantido para consistência, mas agora a CTE já foi extraída)
+alert_topmost('CTE extraído automaticamente. Inclua a NF e os dados do motorista')
 time.sleep(0.5)
 
-#ALERTA
-alert_topmost('Copie o número do CT-E')
-time.sleep(0.5)
-
-pyautogui.hotkey('alt', 'tab')
-time.sleep(0.5)
+# COLA O NÚMERO DA CTE
+print('[AutoMDF] Colando número da CTE no formulário...', flush=True)
 pyautogui.hotkey('ctrl', 'v')
 time.sleep(0.5)
 pyautogui.write(' NF: ', interval=0.10)
