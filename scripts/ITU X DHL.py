@@ -25,6 +25,9 @@ try:
         prompt_topmost,
         register_exception_handler,
         switch_browser_tab,
+        wait_for_form_load,
+        wait_for_invoisys_form,
+        wait_for_page_reload_and_form,
     )
 except ModuleNotFoundError:
     PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -44,6 +47,9 @@ except ModuleNotFoundError:
         prompt_topmost,
         register_exception_handler,
         switch_browser_tab,
+        wait_for_form_load,
+        wait_for_invoisys_form,
+        wait_for_page_reload_and_form,
     )
 
 pyautogui = cast(Any, pyautogui)
@@ -172,9 +178,13 @@ pyautogui.press('esc')
 pyautogui.press('enter')
 #---------------------------------------------------------------
 
-# ALERTA
-alert_topmost('Aguarde o formulário abrir.')
-time.sleep(2)
+# AGUARDAR PÁGINA RECARREGAR E FORMULÁRIO CARREGAR (SEQUENCIAL)
+print('[AutoMDF] Aguardando recarregamento da página e carregamento do formulário MDF-e...', flush=True)
+if wait_for_page_reload_and_form(timeout=15.0):
+    print('[AutoMDF] Formulário MDF-e detectado após recarregamento da página!', flush=True)
+else:
+    raise RuntimeError("Formulário MDF-e não foi detectado após recarregamento da página (15s). Verifique se o sistema Invoisys está funcionando corretamente.")
+
 progress.update(25, 'Formulário MDF-e aberto')
 #---------------------------------------------------------------
 

@@ -2,3 +2,5 @@ pyautogui
 pyperclip
 pygetwindow
 PySide6
+Pillow
+opencv-python

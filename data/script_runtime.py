@@ -21,6 +21,21 @@ try:
 except Exception:  # pragma: no cover - fallback when packages are missing
     focus = None  # type: ignore[assignment]
 
+try:
+    from .image_recognition import (
+        wait_for_invoisys_form,
+        wait_for_page_load,
+        is_image_present,
+        diagnose_image_detection,
+        wait_for_page_reload_and_form,
+    )
+except Exception:  # pragma: no cover - fallback when packages are missing
+    wait_for_invoisys_form = None  # type: ignore[assignment]
+    wait_for_page_load = None  # type: ignore[assignment]
+    is_image_present = None  # type: ignore[assignment]
+    diagnose_image_detection = None  # type: ignore[assignment]
+    wait_for_page_reload_and_form = None  # type: ignore[assignment]
+
 from .dialog_service import DialogService
 
 DEFAULT_TOTAL_STEPS = 100
@@ -465,17 +480,95 @@ def _parse_text_title_defaults(
     return text, title, default_value
 
 
+# ------------------------------------------------------------------
+# Reconhecimento de Imagem
+# ------------------------------------------------------------------
+
+def wait_for_form_load(timeout: float = 30.0) -> bool:
+    """Aguarda o carregamento do formulário MDF-e do Invoisys usando reconhecimento de imagem.
+
+    Args:
+        timeout: Tempo máximo para aguardar em segundos
+
+    Returns:
+        True se o formulário foi detectado, False caso contrário
+    """
+    if wait_for_invoisys_form is None:
+        _log_event("Reconhecimento de imagem não disponível", level="warning")
+        return False
+
+    try:
+        return wait_for_invoisys_form(timeout=timeout)
+    except Exception as e:
+        _log_event(f"Erro no reconhecimento de imagem: {e}", level="error")
+        return False
+
+
+def wait_for_image_on_screen(
+    image_name: str,
+    timeout: float = 30.0,
+    confidence: float = 0.9,
+) -> bool:
+    """Aguarda uma imagem específica aparecer na tela.
+
+    Args:
+        image_name: Nome do arquivo de imagem na pasta img/
+        timeout: Tempo máximo para aguardar em segundos
+        confidence: Confiança mínima para reconhecimento (0.0-1.0)
+
+    Returns:
+        True se a imagem foi encontrada, False caso contrário
+    """
+    if wait_for_page_load is None:
+        _log_event("Reconhecimento de imagem não disponível", level="warning")
+        return False
+
+    try:
+        return wait_for_page_load(image_name, timeout=timeout, confidence=confidence)
+    except Exception as e:
+        _log_event(f"Erro no reconhecimento de imagem: {e}", level="error")
+        return False
+
+
+def check_image_present(
+    image_name: str,
+    confidence: float = 0.9,
+) -> bool:
+    """Verifica se uma imagem está presente na tela.
+
+    Args:
+        image_name: Nome do arquivo de imagem na pasta img/
+        confidence: Confiança mínima para reconhecimento (0.0-1.0)
+
+    Returns:
+        True se a imagem foi encontrada, False caso contrário
+    """
+    if is_image_present is None:
+        return False
+
+    try:
+        return is_image_present(image_name, confidence=confidence)
+    except Exception as e:
+        _log_event(f"Erro ao verificar imagem: {e}", level="error")
+        return False
+
+
 __all__ = [
     "DEFAULT_TOTAL_STEPS",
     "abort",
     "alert_topmost",
     "apply_pyautogui_bridge",
     "checkpoint",
+    "check_image_present",
     "confirm_topmost",
     "configure_stdio",
+    "diagnose_image_detection",
     "ensure_browser_focus",
-    "switch_browser_tab",
     "prompt_topmost",
     "register_exception_handler",
+    "switch_browser_tab",
     "update_progress_realtime",
+    "wait_for_form_load",
+    "wait_for_image_on_screen",
+    "wait_for_page_reload_and_form",
 ]
